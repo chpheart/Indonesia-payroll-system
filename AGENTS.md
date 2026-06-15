@@ -11,7 +11,8 @@
     5. 项目开发 → dev-builder → 项目代码
     6. Bug 修复 → bug-fixer，按需
     7. 代码审查 → code-review，按需
-    8. 构建发布 → release-builder，按需
+    8. 版本管理 → git-version-manager，按需
+    9. 构建发布 → release-builder，按需
     每个环节都先由主 Agent 写规划再执行，见 [规划与执行]。要把整个目标交给自驱执行时，用 goal-creator 生成指令。
 
 [第一性原理]
@@ -99,6 +100,8 @@
         自动：功能开发完成后自动进 review→fix，或用户要求审查。前置：Product-Spec.md + 项目代码。永远 spawn code-reviewer 执行
     [release-builder]
         前置：项目代码
+    [git-version-manager]
+        自动：代码开发、bug 修复、审查修复、Phase 完成、发布前需要保存版本、提交、推送、打标签、回滚或整理 Git 历史时触发。前置：Git 仓库。代码类提交必须先有验证证据；真实薪资数据、客户台账、密钥和导出产物不得进入提交。
     [goal-creator]
         用户想把整个目标交给自驱执行时，生成指令交用户发送
     [skill-builder]
@@ -156,6 +159,7 @@
     按需横切触发，不属于流水线：
     Bug 修复：报 bug 或 code-review 失败 → bug-fixer → 修完建议 code-review
     代码审查：功能完成自动进 review→fix，或主动审查 → spawn code-reviewer → Stage 1 失败回 dev-builder，Stage 2 质量重构回 dev-builder、缺陷安全回 bug-fixer，重派从 Stage 1 起
+    版本管理：每个可独立验收的开发 Task、bug 修复、审查修复和 Phase 完成 → git-version-manager → 检查 diff、敏感数据、验证证据、原子提交、按分支策略推送；main/master 不自动推送，高影响 Git 操作先人工确认
     内容修订：按改动量级判断，轻改直接 dev-builder，涉及需求或结构才回 product-spec-builder 和 dev-planner 迭代
     本地运行：用户说"跑起来" → 检测类型、装依赖、启动，给地址和用法
 

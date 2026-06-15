@@ -69,7 +69,8 @@ description: 当 DEV-PLAN.md 就绪、用户说要开始写代码或继续开发
         - 原子提交：每完成一个独立功能就 commit，一个 commit 一个逻辑变更
         - commit message 用 feat、fix、refactor、chore 前缀
         - 提交门槛：编译通过才能 commit，不过编译不提交
-        - push 由 hook 处理，保护分支不自动推
+        - 提交、推送、打标签、回滚按 git-version-manager 执行；代码类提交必须带验证证据
+        - push 由 git-version-manager 或 hook 处理，保护分支不自动推
 
 [设计参照]
     有设计工具 MCP 连接时，每个 Task 前读取涉及页面和组件的精确数值：宽高、间距、字号、字重、颜色、圆角、阴影。每个 Task 都重新读，不凭记忆。编码后读代码实际值逐项对照，有偏差先修再提交。设计稿与 Design-Brief 冲突时以设计稿为准。
@@ -83,7 +84,7 @@ description: 当 DEV-PLAN.md 就绪、用户说要开始写代码或继续开发
         派发 code-reviewer 两阶段审查
         Stage 1 失败补实现，重新派 code-reviewer
         Stage 2 失败：质量和重构问题自己按修改纪律修，确属缺陷或安全漏洞才调 bug-fixer，重新派 code-reviewer
-        两阶段都过 → echo clean > .codex/.needs-review → commit → 下一个 Task
+        两阶段都过 → echo clean > .codex/.needs-review → 调 git-version-manager 创建 checkpoint → 下一个 Task
     用户强调某环节是追加要求，不替换基础流程，review 闭环照常走。
 
 [Phase 完成度判断]
