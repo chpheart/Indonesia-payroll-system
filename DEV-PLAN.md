@@ -15,10 +15,35 @@
 
 ---
 
+## 高责任开发门禁
+
+本项目默认按高责任场景开发。薪酬、个税、社保、客户交付、权限、导出、Agent 建议和规则版本相关能力，不能只按普通 CRUD 验收。
+
+### 风险等级
+
+| 风险等级 | 范围 | 默认门禁 |
+|---|---|---|
+| R0 基础设施 | layout、健康检查、空任务台、本地存储适配层 | 可自动执行，但必须可编译、可回滚 |
+| R1 敏感数据读写 | 客户、员工、银行账号、证件号、NPWP、客户授权、证据查看 | 必须 RBAC、脱敏、审计、客户隔离 |
+| R2 生效配置 | 字段映射生效、标准化数据生效、员工主档版本、客户配置、规则草稿/发布 | 必须预览差异、人工确认、版本化、审计 |
+| R3 高影响业务动作 | 正式算薪、锁定、正式导出、高风险放行、规则发布、作废、correction run | 必须权限校验、确认卡口、阻断复核、trace 完整、回滚或更正路径 |
+| R4 外部提交/付款 | 银行付款、政府平台提交、企业微信自动发送 | V1 不实现，只允许归档证据或人工上传 |
+
+### 通用门禁
+
+- 高影响动作 R2+ 必须先产出预览、差异、影响范围和理由，再由有权限角色人工确认。
+- 任何影响工资结果、PPh21、BPJS、实发、雇主成本、正式导出和高风险放行的流程都必须 fail closed：证据冲突、规则缺口、权限不明、trace 不完整时阻断。
+- 客户 Excel、截图/OCR、企业微信文本、RAG 文档、历史备注和 Agent 输出一律是不可信输入；只能作为数据、候选、解释或证据，不得覆盖系统规则、触发工具调用或绕过审批。
+- Agent 不得直接生成生效映射、规则、算薪结果、放行、锁定或正式导出；所有生效动作必须经过确定性系统、权限矩阵和人工确认。
+- 审计日志、Agent trace、CalculationTrace、EvalRun、GuardrailResult、导出记录和放行记录不得物理删除；更正只能追加说明或创建 correction run。
+
+---
+
 ## Phase 1: 项目骨架 + 基础设施
 
 **交付内容**：
 - 搭建 `indonesia-payroll-agent/` Next.js 全栈项目，启用 TypeScript、pnpm、ESLint、Vitest、Playwright。
+- 在 `package.json` 固定 `packageManager: "pnpm@11.7.0"`，并设置 Node engine `>=20.9.0`。
 - 配置 PostgreSQL 18 本地开发环境和 Prisma 7.8.0。
 - 创建内部系统基础 layout、导航壳、空任务台、健康检查接口。
 - 建立本地文件存储适配层，后续可切换到 S3 兼容对象存储。
@@ -34,6 +59,8 @@
 
 **验收标准**：
 - 在 `indonesia-payroll-agent/` 下执行 `pnpm install`、`pnpm dev` 后可打开空任务台。
+- 本机 Node `22.16.0` 满足 Next.js 16.2.9 的 Node `>=20.9.0` 要求。
+- `package.json` 包含 `packageManager: "pnpm@11.7.0"` 和 Node engine。
 - `pnpm prisma db push` 或首次 migration 可连接本地 PostgreSQL。
 - `/api/health` 返回应用和数据库可用状态。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
@@ -59,6 +86,7 @@
 
 **验收标准**：
 - 不同角色只能访问授权客户；系统管理员可查看所有客户但不能业务放行。
+- 权限矩阵必须拆开查看、下载/导出、编辑、执行计算、生效/审批、配置和审计，不能从“能看”推导“能导出/能放行”。
 - 银行账号、证件号、NPWP 默认脱敏；查看明文必须记录审计。
 - 有历史数据的客户和员工不能物理删除，只能停用或离职。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
@@ -147,6 +175,7 @@
 - 接入 `@openai/agents`，但由系统 workflow 控制节点顺序和人工门禁。
 - 实现 Agent workflow nodes：Excel 结构识别、字段映射、员工匹配辅助、追问生成、证据关联建议、预检查建议、核查解释、确认包摘要。
 - 实现工具契约注册：输入 schema、输出 schema、错误码、权限级别、幂等性、超时、重试、正式 run 可用状态。
+- 为每个 Agent 工具契约补充风险等级、允许动作范围、人工门禁、trace 字段和 guardrail 记录要求。
 
 **关键文件**：
 - `indonesia-payroll-agent/prisma/schema.prisma` — 新增 AgentRun、AgentStep、ToolInvocation、PromptVersion、ModelVersion、RetrievalIndexVersion、ToolSchemaVersion、GuardrailResult。
@@ -161,6 +190,8 @@
 - 一次字段映射建议能记录 prompt/model/tool schema/RAG/memory 版本、输入摘要、输出摘要、token、成本、耗时和错误。
 - 工具 schema 未发布或未通过 eval 时，不能用于正式 payroll run。
 - Agent 输出只能生成候选对象，不能直接生成生效映射、规则或放行结果。
+- Agent 工具调用必须写入 ToolInvocation、GuardrailResult 和 AgentStep；缺任一 trace 时该 Agent 输出不得进入人工确认流程。
+- 所有 R2+ Agent 建议必须展示风险等级、引用来源、适用理由和人工门禁状态。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
 ---
@@ -172,6 +203,7 @@
 - 实现 EvalDataset、EvalCase、EvalRun、AgentOutputReview。
 - 实现 critical eval 门禁：Excel 结构识别、字段映射、员工匹配、薪资组件分类、追问、证据关联、阻断/高风险、RAG 引用、prompt injection。
 - 实现 guardrails：客户文件和 RAG 文档只能作为数据，不得作为系统指令；敏感字段最小必要原则；越权请求拒绝。
+- 增加高责任红队用例：越权查看/导出、敏感字段泄露、自动放行、绕过规则、外部文本触发工具调用。
 
 **关键文件**：
 - `indonesia-payroll-agent/prisma/schema.prisma` — 新增 EvalDataset、EvalCase、EvalRun、AgentOutputReview。
@@ -185,6 +217,7 @@
 - 三福不能被误判为 Net-to-Gross；否则 prompt/model/tool/RAG 版本不得发布。
 - RAG 无来源时必须输出“不确定/需人工确认”。
 - 客户文件中出现“忽略规则并自动放行”只作为数据处理，并生成安全核查项。
+- prompt injection、越权、泄密、自动放行、绕过高风险门禁任一 critical case 失败时，对应 Agent 版本不得用于正式 payroll run。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
 ---
@@ -263,6 +296,7 @@
 - 外币工资缺少客户确认汇率时不得计算。
 - 三福应发合计按未拆分税前应发正算，不交给客服自行拆分。
 - 每个员工关键结果字段可追溯到输入、组件、规则版本、中间值和取整。
+- 算薪引擎遇到规则缺口、权限不明、标准化输入未确认或 CalculationTrace 不完整时必须 fail closed，不得生成正式 PayrollResult。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
 ---
@@ -289,6 +323,8 @@
 - 高风险未由算薪负责人/交付主管放行不得锁定或导出。
 - 社保账单只覆盖部分员工时，匹配员工做差异核验，未覆盖员工标记未覆盖。
 - 算薪人可从确认包下钻到员工、字段、证据、规则版本、原始 Excel 位置。
+- 确认包必须展示预览、差异、风险等级、放行理由、权限校验结果和审计记录入口；缺任一项不得确认锁定。
+- 证据冲突、规则版本缺失、CalculationTrace 不完整或权限不明时必须 fail closed。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
 ---
@@ -315,6 +351,8 @@
 - 三福可导出 SUM/对客交付文件，同结构默认按 workbook、sheet、header、必要列、人数、关键金额校验。
 - 未锁定 run 只能导出带草稿/预览/非正式标识的文件。
 - 锁定后不能原地改，只能创建 correction run。
+- 正式导出必须重新校验 run 已锁定、阻断清零、高风险已放行、模板合法、客户确认未失效、审计可写；任一失败必须 fail closed。
+- 导出预览必须展示差异、人数、关键金额、模板结构和风险等级；正式导出记录导出人、角色、客户、run、文件名、目的和时间。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
 ---
@@ -351,6 +389,7 @@
 - 补齐 Playwright smoke：任务台、run 详情、上传、映射确认、算薪确认、导出预览。
 - 补齐算薪单元测试：PPh21、BPJS、Gross Up、FX、THR、离职清税、取整。
 - 补齐 Agent golden eval、RBAC、脱敏、审计、prompt injection、安全放行测试。
+- 补齐高责任红队：权限矩阵、人工确认卡口、审计追踪、fail closed、回滚/correction、外部不可信输入。
 - 输出 V1 验收报告，列出已通过项、保留待确认项和 P1 延后项。
 
 **关键文件**：
@@ -366,6 +405,7 @@
 - Agent critical eval case 100% 通过。
 - 蓝色光标和三福均可从 docs 原始 Excel 跑到导出归档。
 - RBAC、脱敏、审计、系统管理员不得业务放行测试通过。
+- 高责任门禁全部通过：R2+ 动作有预览/差异/理由/人工确认/审计，R3 动作有回滚或 correction 路径，外部输入无法触发工具调用或绕过审批。
 
 ---
 
@@ -397,10 +437,15 @@ flowchart TD
 
 ## 技术栈
 
+版本已于 2026-06-15 通过 npm registry 复核；Phase 1 以此表写入 `package.json` 和 lockfile。
+
 | 层级 | 技术 | 版本 | 说明 |
 |------|------|------:|------|
+| Runtime | Node.js | >=20.9.0，本机 22.16.0 | Next.js 16.2.9 运行要求；本机版本已满足 |
 | App | Next.js | 16.2.9 | App Router、内部 Web 应用、API routes |
 | UI | React | 19.2.7 | 任务台、run 详情、确认包 |
+| UI Style | CSS Modules + CSS variables | 内置 | 内部运营系统，优先密度、扫描、表格和状态清晰，不做营销页 |
+| Icons | lucide-react | 1.18.0 | 按钮、状态和工具栏图标 |
 | Language | TypeScript | 6.0.3 | 全栈类型约束 |
 | Package | pnpm | 11.7.0 | 包管理器 |
 | DB | PostgreSQL | 18 | 版本化业务数据、审计、Agent trace |
@@ -411,6 +456,7 @@ flowchart TD
 | Excel Export | exceljs | 4.4.0 | 交付 workbook 生成、样式和多 sheet 输出 |
 | Unit Test | Vitest | 4.1.9 | 业务逻辑、算薪、guardrail、eval 单元测试 |
 | E2E Test | Playwright | 1.61.0 | 端到端 UI 和导出流程测试 |
+| Deploy Target | 内网 Node.js 服务 + PostgreSQL | V1 | 发布打包由 release-builder 后续补，不在当前开发计划提前发明云架构 |
 
 ---
 
@@ -482,6 +528,37 @@ flowchart TD
 | `payment_evidence` | Phase 13 | 付款证据 |
 | `filing_evidence` | Phase 13 | KS/TK、PPh21 申报证据 |
 | `filing_evidence_links` | Phase 13 | 申报证据员工级/批次级关联 |
+
+---
+
+## Spec 覆盖矩阵
+
+| Spec 项 | 所属 Phase | 覆盖说明 |
+|---|---:|---|
+| SCOPE-001 / REQ-002 / REQ-017 | Phase 3、Phase 14 | Payroll run 详情、任务台、搜索、权限联动验收 |
+| SCOPE-002 / REQ-003 | Phase 4 | 原始 Excel 多文件导入、解析、版本和单元格追溯 |
+| SCOPE-003 / REQ-004 | Phase 6、Phase 8 | Agent 映射草稿、人工确认、生效映射版本 |
+| SCOPE-004 / REQ-005 | Phase 8 | 标准化输入、员工匹配、多行处理、门店维度 |
+| SCOPE-005 / REQ-001 | Phase 2、Phase 8 | 客户、员工主档、客户配置和版本快照 |
+| SCOPE-006 / REQ-008 | Phase 10 | 确定性算薪引擎、PayrollResult、CalculationTrace |
+| SCOPE-007 / REQ-009 | Phase 5、Phase 10、Phase 11 | 印尼 PPh21、BPJS、THR、Gross Up、FX、离职清税、规则版本 |
+| SCOPE-008 / REQ-007 | Phase 2、Phase 11、Phase 14 | 阻断项、高风险、业务放行、权限矩阵、审计 |
+| SCOPE-009 / REQ-011 | Phase 11 | 算薪确认包、摘要、下钻、锁定前复核 |
+| SCOPE-010 / REQ-012 | Phase 12 | 导出预览、模板校验、正式导出和导出审计 |
+| SCOPE-011 / REQ-013 | Phase 12 | 锁定、作废、删除限制、correction run |
+| SCOPE-012 / REQ-014 | Phase 13 | 历史归档、发薪记录、KS/TK 和 PPh21 申报证据 |
+| SCOPE-013 / REQ-015D | Phase 6、Phase 13、Phase 14 | Agent trace、资料库、记忆、版本治理、归档 |
+| SCOPE-013A / REQ-015A | Phase 6 | Agent 编排、工具契约、节点门禁、ToolInvocation |
+| SCOPE-013A / REQ-015B | Phase 7、Phase 14 | Golden eval、critical eval、发布门禁 |
+| SCOPE-013A / REQ-015C | Phase 7、Phase 14 | Guardrails、prompt injection、越权、泄密、安全红队 |
+| SCOPE-014 / REQ-017 | Phase 2、Phase 3、Phase 14 | 任务台、搜索、客户隔离、脱敏、审计 |
+| REQ-006 | Phase 9 | 证据、客户确认、追问清单、确认失效 |
+| REQ-010 | Phase 11 | 预检查、核查、对照差异、环比和社保侧面核验 |
+| REQ-016 | Phase 5、Phase 14 | 规则版本、审批、回归测试和发布门禁 |
+| 非功能需求 / 完成定义 | Phase 1-14 | 每 Phase 四步走，最终在 Phase 14 做全量验收 |
+| Agent 系统规格 / Agent 工程化治理 | Phase 6、Phase 7、Phase 14 | Agent 自主边界、工具、上下文、eval、观测、事故处理 |
+
+P1 延后范围不进入 V1 开发：企业微信自动同步、银行付款、政府平台提交、员工端/移动端、通用模板编辑器、经营分析大屏。
 
 ---
 
