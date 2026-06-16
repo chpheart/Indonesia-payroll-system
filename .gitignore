@@ -48,6 +48,7 @@ docs/**/*.csv
 docs/**/*.pages
 docs/真实算薪数据案例/
 docs/印尼交付主台账.xlsx
+docs/design-references/**/*.zip
 
 # Codex runtime queues and generated proposals
 .codex/evolution/signals.jsonl

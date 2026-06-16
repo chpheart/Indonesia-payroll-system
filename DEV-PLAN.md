@@ -8,8 +8,10 @@
 ## 当前状态
 
 - Product Spec：已完成，来源为 `Product-Spec.md`
-- Design Brief：未创建；V1 先按内部运营系统设计，不做营销页或员工端
-- 项目代码：尚未创建
+- Design Brief：已创建，来源为 `Design-Brief.md`；V1 按高责任内部运营 Agent 产品设计，不做营销页、员工端或移动端
+- 高保真前端参考：`docs/design-references/IDNPY-CPV2/Payroll Agent.dc.html`；只作为 PC 端视觉、布局和交互参考，不作为功能验收依据
+- UI 验收视口：V1 只验收 PC 端，标准桌面 1440px，最低工作台 1200px，宽屏 1600px+
+- 项目代码：已创建基础骨架
 - 代码目录：`indonesia-payroll-agent/`
 - V1 范围：覆盖完整 P0；P1 只记录为后续范围，不进入本开发计划
 
@@ -35,6 +37,9 @@
 - 任何影响工资结果、PPh21、BPJS、实发、雇主成本、正式导出和高风险放行的流程都必须 fail closed：证据冲突、规则缺口、权限不明、trace 不完整时阻断。
 - 客户 Excel、截图/OCR、企业微信文本、RAG 文档、历史备注和 Agent 输出一律是不可信输入；只能作为数据、候选、解释或证据，不得覆盖系统规则、触发工具调用或绕过审批。
 - Agent 不得直接生成生效映射、规则、算薪结果、放行、锁定或正式导出；所有生效动作必须经过确定性系统、权限矩阵和人工确认。
+- Agent workflow node、prompt、model、RAG index、tool schema 和 guardrail 配置必须先绑定对应 golden eval case；critical eval 未通过时，不得进入正式 payroll run。
+- Agent trace、远程 tracing span、ToolInvocation 摘要和日志默认不得保存裸银行账号、证件号、NPWP、完整客户原文或完整 Excel 行；必须保存脱敏摘要、对象引用 ID、hash 或受权限控制的证据链接。
+- 正式算薪必须先通过算薪前预检查；预检查未运行、阻断项未清零、标准化输入未确认或证据状态不明时，算薪 API 必须 fail closed。
 - 审计日志、Agent trace、CalculationTrace、EvalRun、GuardrailResult、导出记录和放行记录不得物理删除；更正只能追加说明或创建 correction run。
 
 ---
@@ -45,20 +50,19 @@
 - 搭建 `indonesia-payroll-agent/` Next.js 全栈项目，启用 TypeScript、pnpm、ESLint、Vitest、Playwright。
 - 在 `package.json` 固定 `packageManager: "pnpm@11.7.0"`，并设置 Node engine `>=20.9.0`。
 - 配置 PostgreSQL 18 本地开发环境和 Prisma 7.8.0。
-- 创建内部系统基础 layout、导航壳、空任务台、健康检查接口。
+- 创建健康检查接口；Phase 1 前端部分暂跳过，不创建内部系统基础 layout、导航壳和空任务台。
 - 建立本地文件存储适配层，后续可切换到 S3 兼容对象存储。
+- 前端节奏：仅 Phase 1 暂跳过 UI；PC 端 UI 从 Phase 3 恢复开发，以高保真前端参考为准，不做移动端和平板端兼容验收。
 
 **关键文件**：
 - `indonesia-payroll-agent/package.json` — 项目脚本、依赖和 pnpm 配置。
 - `indonesia-payroll-agent/docker-compose.yml` — PostgreSQL 18 本地开发数据库。
 - `indonesia-payroll-agent/prisma/schema.prisma` — Prisma datasource、generator 和初始空 schema。
-- `indonesia-payroll-agent/src/app/(app)/layout.tsx` — 内部系统主布局和导航壳。
-- `indonesia-payroll-agent/src/app/(app)/page.tsx` — 空任务台入口。
 - `indonesia-payroll-agent/src/app/api/health/route.ts` — 健康检查和数据库连接探针。
 - `indonesia-payroll-agent/src/lib/storage/local-file-store.ts` — 本地文件存储适配层。
 
 **验收标准**：
-- 在 `indonesia-payroll-agent/` 下执行 `pnpm install`、`pnpm dev` 后可打开空任务台。
+- 在 `indonesia-payroll-agent/` 下执行 `pnpm install`、`pnpm dev` 后应用服务可启动；Phase 1 不验收页面 UI。
 - 本机 Node `25.9.0` 满足 Next.js 16.2.9 的 Node `>=20.9.0` 要求。
 - `package.json` 包含 `packageManager: "pnpm@11.7.0"` 和 Node engine。
 - `pnpm prisma db push` 或首次 migration 可连接本地 PostgreSQL。
@@ -74,13 +78,17 @@
 - 建立 RBAC：客服/交付专员、算薪人、算薪负责人/交付主管、规则管理员、系统管理员。
 - 实现敏感字段脱敏和明文查看审计。
 - 创建客户和员工基础管理页面，支持启用、停用、误建删除规则。
+- 实现审计日志查询页和审计详情入口，覆盖导出、锁定、高风险放行、敏感明文查看、规则发布、correction run 等高影响事件。
 
 **关键文件**：
 - `indonesia-payroll-agent/prisma/schema.prisma` — 新增 User、Role、Client、ClientAccess、AuditLog、ClientConfigVersion、Employee、EmployeeMasterVersion。
 - `indonesia-payroll-agent/src/domain/auth/permissions.ts` — 角色权限矩阵和客户授权判断。
 - `indonesia-payroll-agent/src/domain/audit/audit-service.ts` — 审计记录写入和追加更正说明。
+- `indonesia-payroll-agent/src/domain/audit/audit-query-service.ts` — 审计日志查询、筛选和导出前置校验。
 - `indonesia-payroll-agent/src/domain/clients/client-service.ts` — 客户启用、停用、配置版本逻辑。
 - `indonesia-payroll-agent/src/domain/employees/employee-service.ts` — 员工主档版本、关键字段证据要求、脱敏规则。
+- `indonesia-payroll-agent/src/app/api/audit-logs/route.ts` — 审计日志查询 API。
+- `indonesia-payroll-agent/src/app/(app)/audit/page.tsx` — 审计日志查询页。
 - `indonesia-payroll-agent/src/app/(app)/clients/page.tsx` — 客户列表和客户授权入口。
 - `indonesia-payroll-agent/src/app/(app)/employees/page.tsx` — 员工查询和主档入口。
 
@@ -88,6 +96,7 @@
 - 不同角色只能访问授权客户；系统管理员可查看所有客户但不能业务放行。
 - 权限矩阵必须拆开查看、下载/导出、编辑、执行计算、生效/审批、配置和审计，不能从“能看”推导“能导出/能放行”。
 - 银行账号、证件号、NPWP 默认脱敏；查看明文必须记录审计。
+- 审计日志可按客户、run、动作类型、操作者、时间查询；历史事件不可编辑/删除，只允许追加更正说明。
 - 有历史数据的客户和员工不能物理删除，只能停用或离职。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
@@ -99,6 +108,7 @@
 - 实现 payroll run 创建、负责人、目标完成日期、发薪日、状态机和阶段回退。
 - 实现任务台指标：待处理 run、阻断项数量、高风险项数量、待客户确认数量、逾期任务数量。
 - 实现 run 详情页，所有上传、映射、追问、预检查、算薪、确认、锁定、导出都从详情页进入。
+- 按 PC 高保真参考实现 App Shell、任务台、run 详情工作台和共享高责任 UI 组件层；组件只承载展示和交互门禁，业务判定来自 domain/service。
 
 **关键文件**：
 - `indonesia-payroll-agent/prisma/schema.prisma` — 新增 PayrollRun、RunStatusEvent、RunAssignment、RunReminder。
@@ -106,13 +116,25 @@
 - `indonesia-payroll-agent/src/domain/payroll-runs/run-service.ts` — run 创建、查询、负责人变更。
 - `indonesia-payroll-agent/src/app/api/payroll-runs/route.ts` — payroll run 列表和创建 API。
 - `indonesia-payroll-agent/src/app/api/payroll-runs/[runId]/route.ts` — run 详情 API。
+- `indonesia-payroll-agent/src/app/(app)/layout.tsx` — PC 内部系统 App Shell。
+- `indonesia-payroll-agent/src/app/(app)/page.tsx` — 默认进入任务台或工作台概览。
 - `indonesia-payroll-agent/src/app/(app)/payroll-runs/page.tsx` — 任务台和筛选。
 - `indonesia-payroll-agent/src/app/(app)/payroll-runs/[runId]/page.tsx` — run 详情页骨架。
+- `indonesia-payroll-agent/src/components/app-shell.tsx` — 左侧导航、顶部上下文和用户权限入口。
+- `indonesia-payroll-agent/src/components/risk-gate-banner.tsx` — 阻断/高风险/需确认状态条。
+- `indonesia-payroll-agent/src/components/issue-row.tsx` — 阻断项和高风险项列表行。
+- `indonesia-payroll-agent/src/components/approval-drawer.tsx` — 高影响动作确认抽屉。
+- `indonesia-payroll-agent/src/components/evidence-chip.tsx` — 证据引用和来源状态。
+- `indonesia-payroll-agent/src/components/sensitive-field-mask.tsx` — 敏感字段脱敏和明文查看入口。
+- `indonesia-payroll-agent/src/components/audit-timeline.tsx` — run 操作时间线。
+- `indonesia-payroll-agent/src/components/calculation-trace-panel.tsx` — 计算 trace 展示面板。
 
 **验收标准**：
 - 可创建客户 + 薪资月份 payroll run，并进入 run 详情页。
 - 文件、映射、规则、汇率、客户配置变化可触发需重新预检查/需重算状态。
 - 任务台筛选客户、月份、状态、负责人、阻断/高风险可用。
+- 任务台和 run 详情在 1440px PC 视口匹配高保真参考的信息密度、左侧导航、风险门禁和确认抽屉结构；1200px 与 1600px+ 不破坏固定工具栏、表格和状态标签。
+- 高影响 UI 组件必须显示权限、前置条件和业务理由，不能只用灰按钮或 toast 代替真实门禁。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
 ---
@@ -124,11 +146,14 @@
 - 解析 workbook、sheet、有效数据区域、表头、样例值、单元格地址、原始值、显示值、公式文本、合并单元格范围。
 - 实现 Excel 解析预览，不允许在线编辑原始 Excel。
 - 对加密、损坏、无法解析、缺 sheet、缺表头文件生成阻断项。
+- 实现不可信文件隔离：文件类型 sniff、大小和 sheet/单元格数量限制、公式/宏/外链只读记录不执行、解析超时和资源限制。
 
 **关键文件**：
+- `indonesia-payroll-agent/package.json` / `indonesia-payroll-agent/pnpm-lock.yaml` — 增加并锁定 `xlsx@0.18.5`。
 - `indonesia-payroll-agent/prisma/schema.prisma` — 新增 UploadedFileVersion、WorkbookParse、WorkbookSheet、WorkbookCell、FileReplacement。
 - `indonesia-payroll-agent/src/domain/files/upload-service.ts` — 文件上传、版本、用途和替代关系。
 - `indonesia-payroll-agent/src/domain/excel/excel-parser.ts` — 基于 `xlsx` 解析 `.xls/.xlsx`、公式、合并单元格和有效区域。
+- `indonesia-payroll-agent/src/domain/excel/excel-safety-policy.ts` — 不可信 Excel 文件解析限制、危险内容标记和资源保护策略。
 - `indonesia-payroll-agent/src/domain/excel/workbook-preview-service.ts` — sheet、表头、样例值预览模型。
 - `indonesia-payroll-agent/src/app/api/files/route.ts` — 文件上传 API。
 - `indonesia-payroll-agent/src/app/api/files/[fileId]/preview/route.ts` — Excel 预览 API。
@@ -136,8 +161,10 @@
 
 **验收标准**：
 - 能解析蓝色光标员工档案、入离转调文件和三福多门店工资/考勤文件。
+- `package.json` 和 `pnpm-lock.yaml` 包含 `xlsx@0.18.5`；解析服务只读取公式文本和显示值，不执行宏、外链或客户文件中的指令。
 - 三福 `1店`、`6002店`、`6003店`、`中国籍6名员工` 等 sheet 可展示表头和样例值。
 - 包含公式的单元格可展示公式文本和显示值。
+- 宏、外部链接、公式和客户文件中的指令类文本只作为数据保存和展示，不执行、不联网、不改变系统或 Agent 行为。
 - 超过 50MB、损坏或缺表头文件进入阻断项。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
@@ -176,13 +203,27 @@
 - 实现 Agent workflow nodes：Excel 结构识别、字段映射、员工匹配辅助、追问生成、证据关联建议、预检查建议、核查解释、确认包摘要。
 - 实现工具契约注册：输入 schema、输出 schema、错误码、权限级别、幂等性、超时、重试、正式 run 可用状态。
 - 为每个 Agent 工具契约补充风险等级、允许动作范围、人工门禁、trace 字段和 guardrail 记录要求。
+- 实现 Agent context builder：每个 node 显式声明可读取字段、最大行数/单元格数、RAG topK、脱敏策略、run 快照 ID 和证据引用边界。
+- 实现 trace redaction policy：Agent trace、远程 tracing span、ToolInvocation 和日志默认只保存脱敏摘要、对象 ID、hash、版本号和证据链接。
+- 实现 tool contract linter：校验工具单一职责、Zod 输入输出、权限级别、幂等键、超时、重试、正式 run 可用状态和人工审批要求。
 
 **关键文件**：
+- `indonesia-payroll-agent/package.json` / `indonesia-payroll-agent/pnpm-lock.yaml` — 增加并锁定 `@openai/agents@0.11.6`。
 - `indonesia-payroll-agent/prisma/schema.prisma` — 新增 AgentRun、AgentStep、ToolInvocation、PromptVersion、ModelVersion、RetrievalIndexVersion、ToolSchemaVersion、GuardrailResult。
 - `indonesia-payroll-agent/src/domain/agent/agent-orchestrator.ts` — workflow node 编排和人工门禁边界。
 - `indonesia-payroll-agent/src/domain/agent/tool-registry.ts` — Agent 工具契约注册和版本校验。
+- `indonesia-payroll-agent/src/domain/agent/tool-contract-linter.ts` — 工具契约静态校验和正式 run 可用性门禁。
+- `indonesia-payroll-agent/src/domain/agent/context-builder.ts` — Agent node 最小必要上下文构建、脱敏和边界控制。
+- `indonesia-payroll-agent/src/domain/agent/trace-redaction-policy.ts` — trace、日志和远程 tracing span 的敏感字段脱敏规则。
 - `indonesia-payroll-agent/src/domain/agent/agent-trace-service.ts` — AgentRun、AgentStep、ToolInvocation 写入。
+- `indonesia-payroll-agent/src/domain/agent/nodes/excel-structure-node.ts` — Excel 结构识别 node。
 - `indonesia-payroll-agent/src/domain/agent/nodes/field-mapping-node.ts` — 字段映射建议 node。
+- `indonesia-payroll-agent/src/domain/agent/nodes/employee-matching-node.ts` — 员工匹配辅助 node。
+- `indonesia-payroll-agent/src/domain/agent/nodes/question-generation-node.ts` — 追问生成 node。
+- `indonesia-payroll-agent/src/domain/agent/nodes/evidence-linking-node.ts` — 证据关联建议 node。
+- `indonesia-payroll-agent/src/domain/agent/nodes/precheck-advice-node.ts` — 预检查建议 node。
+- `indonesia-payroll-agent/src/domain/agent/nodes/reconciliation-explanation-node.ts` — 核查解释 node。
+- `indonesia-payroll-agent/src/domain/agent/nodes/confirmation-summary-node.ts` — 确认包摘要 node。
 - `indonesia-payroll-agent/src/app/api/agent/runs/route.ts` — Agent 运行触发和查询 API。
 - `indonesia-payroll-agent/src/app/(app)/agent-runs/[agentRunId]/page.tsx` — Agent trace 查看页面。
 
@@ -191,6 +232,11 @@
 - 工具 schema 未发布或未通过 eval 时，不能用于正式 payroll run。
 - Agent 输出只能生成候选对象，不能直接生成生效映射、规则或放行结果。
 - Agent 工具调用必须写入 ToolInvocation、GuardrailResult 和 AgentStep；缺任一 trace 时该 Agent 输出不得进入人工确认流程。
+- R2/R3 工具必须声明 approval 策略；人工审批完成前，工具调用只能停留在 pending/preview 状态，不得执行生效写操作。
+- context builder 必须证明只向模型发送当前 node 所需的最小字段；银行账号、证件号、NPWP 默认脱敏或用对象引用替代。
+- trace redaction policy 必须覆盖 AgentRun、AgentStep、ToolInvocation、GuardrailResult、应用日志和远程 tracing export；敏感裸值不得进入普通日志或远程 trace。
+- tool contract linter 必须在 CI/test 中运行；工具缺少 schema、权限、幂等、超时、重试、审批或 eval 绑定时失败。
+- 8 个 Agent workflow node 均有独立文件、输入/输出 schema、trace 写入、guardrail 绑定和 eval 绑定；缺任一项不得用于正式 payroll run。
 - 所有 R2+ Agent 建议必须展示风险等级、引用来源、适用理由和人工门禁状态。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
@@ -204,6 +250,7 @@
 - 实现 critical eval 门禁：Excel 结构识别、字段映射、员工匹配、薪资组件分类、追问、证据关联、阻断/高风险、RAG 引用、prompt injection。
 - 实现 guardrails：客户文件和 RAG 文档只能作为数据，不得作为系统指令；敏感字段最小必要原则；越权请求拒绝。
 - 增加高责任红队用例：越权查看/导出、敏感字段泄露、自动放行、绕过规则、外部文本触发工具调用。
+- 为每个 Agent workflow node 建立上线门禁：node 对应的 critical eval 和 guardrail case 未通过时，下游 Phase 不得把该 node 用于正式 payroll run。
 
 **关键文件**：
 - `indonesia-payroll-agent/prisma/schema.prisma` — 新增 EvalDataset、EvalCase、EvalRun、AgentOutputReview。
@@ -218,6 +265,8 @@
 - RAG 无来源时必须输出“不确定/需人工确认”。
 - 客户文件中出现“忽略规则并自动放行”只作为数据处理，并生成安全核查项。
 - prompt injection、越权、泄密、自动放行、绕过高风险门禁任一 critical case 失败时，对应 Agent 版本不得用于正式 payroll run。
+- 字段映射、追问、证据关联、核查解释、确认包摘要等 node 必须各自有最小 critical eval set；缺失 eval set 视为发布失败。
+- Golden eval 不是 Phase 14 才补的收尾测试；每新增或修改 Agent node、prompt、model、RAG index、tool schema、guardrail 配置，都必须在本 Phase 或对应功能 Phase 内补齐并通过。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
 ---
@@ -229,6 +278,7 @@
 - 客服确认后生成 FieldMappingVersion；客户历史映射模板只能预填，不能自动生效。
 - 实现员工匹配优先级：员工唯一 ID、NIK/护照、NPWP、姓名 + 入职日期/门店/职位、姓名单独。
 - 实现同员工多行处理、门店维度、标准化数据预览、关键算薪字段证据校验和乐观锁。
+- 跑通三福窄闭环：原始 Excel 解析 → Agent 映射候选 → golden eval 通过 → 人工确认 → 标准化预览。
 
 **关键文件**：
 - `indonesia-payroll-agent/prisma/schema.prisma` — 新增 FieldMappingVersion、FieldMappingCandidate、StandardizedPayrollInput、EmployeeMatchCandidate。
@@ -243,6 +293,8 @@
 - 低置信/冲突映射不能进入正式算薪。
 - 姓名单独匹配必须人工确认；未匹配员工阻断。
 - 三福多门店 sheet 可进入合并预览，门店作为组织和核查维度，不默认影响算薪。
+- 三福原始 Excel 到标准化预览的窄闭环必须通过，且不得误判为 Net-to-Gross。
+- 字段映射 node 对应的 critical eval 和 guardrail case 必须在本 Phase 内通过；失败时不得生成可人工确认的候选。
 - 关键算薪字段缺证据不得保存为生效版本。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
@@ -277,21 +329,25 @@
 ## Phase 10: 确定性算薪引擎与计算 Trace
 
 **交付内容**：
+- 实现算薪前最小 Precheck 闭环：规则版本、汇率、客户配置、映射确认、标准化输入确认、关键证据和权限校验。
 - 实现确定性算薪引擎，正式结果只来自系统规则和标准化输入。
 - 支持 PPh21 月度 TER、离职/年度清税、BPJS KS/TK、THR、Gross Up、外币工资、三福未拆分税前应发、金额取整。
 - 输出员工级 PayrollResult 和 CalculationTrace，解释应发、税基、PPh21、BPJS、实发、雇主成本。
 - 实现客户计算值/对照值差异，不允许客户 Excel 公式覆盖系统结果。
 
 **关键文件**：
-- `indonesia-payroll-agent/prisma/schema.prisma` — 新增 PayrollResult、PayrollResultLine、CalculationTrace、CustomerComparisonValue。
+- `indonesia-payroll-agent/prisma/schema.prisma` — 新增 PayrollResult、PayrollResultLine、CalculationTrace、CustomerComparisonValue、BlockingIssue、PrecheckRun。
+- `indonesia-payroll-agent/src/domain/prechecks/precheck-service.ts` — 算薪前最小预检查、阻断项生成和算薪准入判断。
 - `indonesia-payroll-agent/src/domain/payroll-engine/engine.ts` — 算薪引擎入口和确定性计算流程。
 - `indonesia-payroll-agent/src/domain/payroll-engine/pph21.ts` — PPh21 TER、Pasal 17、NPWP 罚则和离职清税。
 - `indonesia-payroll-agent/src/domain/payroll-engine/bpjs.ts` — BPJS KS/TK 基数、上下限、雇主/雇员承担。
 - `indonesia-payroll-agent/src/domain/payroll-engine/gross-up.ts` — Gross Up 迭代、IDR 1 成功阈值和失败阻断。
 - `indonesia-payroll-agent/src/domain/payroll-engine/thr.ts` — THR 规则、计算基数和 trace。
+- `indonesia-payroll-agent/src/app/api/payroll-runs/[runId]/precheck/route.ts` — 算薪前预检查 API。
 - `indonesia-payroll-agent/src/app/api/payroll-runs/[runId]/calculate/route.ts` — 正式算薪触发 API。
 
 **验收标准**：
+- 未运行预检查、阻断项未清零、标准化输入未确认、规则版本缺失、汇率缺失或权限不明时，正式算薪 API 必须拒绝。
 - Gross Up 员工实发与目标到手差异绝对值不超过 IDR 1，否则阻断。
 - 外币工资缺少客户确认汇率时不得计算。
 - 三福应发合计按未拆分税前应发正算，不交给客服自行拆分。
@@ -304,18 +360,17 @@
 ## Phase 11: 预检查、高风险、算薪确认包
 
 **交付内容**：
-- 实现预检查：必填字段、员工匹配、规则版本、汇率、客户配置、证据、映射确认、标准化确认。
+- 扩展 Phase 10 的算薪前预检查：补齐历史环比、社保账单侧面核验、客户计算值差异、模板结构风险和高风险规则。
 - 实现算薪后核查：人数、金额、PPh21、BPJS、客户计算值、历史环比、模板结构。
 - 实现阻断项、高风险项、业务放行、环比阈值、社保账单侧面核验。
 - 实现算薪确认包摘要和下钻：员工明细、证据、规则、原始文件、计算 trace、高风险放行、correction 差额。
 
 **关键文件**：
-- `indonesia-payroll-agent/prisma/schema.prisma` — 新增 BlockingIssue、HighRiskIssue、RiskApproval、PrecheckRun、ReconciliationCheck、PayrollConfirmationPackage。
-- `indonesia-payroll-agent/src/domain/prechecks/precheck-service.ts` — 算薪前预检查和阻断项生成。
+- `indonesia-payroll-agent/prisma/schema.prisma` — 新增 HighRiskIssue、RiskApproval、ReconciliationCheck、PayrollConfirmationPackage。
+- `indonesia-payroll-agent/src/domain/prechecks/precheck-service.ts` — 扩展算薪前预检查规则和高风险联动。
 - `indonesia-payroll-agent/src/domain/risks/risk-service.ts` — 高风险规则、阈值和放行。
 - `indonesia-payroll-agent/src/domain/reconciliation/reconciliation-service.ts` — 客户计算值、环比、社保账单核查。
 - `indonesia-payroll-agent/src/domain/confirmation-package/package-service.ts` — 确认包摘要和下钻数据。
-- `indonesia-payroll-agent/src/app/api/payroll-runs/[runId]/precheck/route.ts` — 预检查 API。
 - `indonesia-payroll-agent/src/app/(app)/payroll-runs/[runId]/confirmation/page.tsx` — 算薪确认包页面。
 
 **验收标准**：
@@ -336,8 +391,10 @@
 - 内置三福 SUM 底表/对客交付文件模板。
 - 实现导出预览、模板结构校验、正式导出、草稿/预览导出、文件命名规则。
 - 实现锁定、作废、归档包、correction run，全量重发或只导出更正员工清单。
+- 采用 DEV-PLAN 默认导出口径：同结构 = workbook、sheet、header、必要列、人数、关键金额一致；像素级样式一致不进 V1 验收，除非 Product-Spec Q-003 后续改口。
 
 **关键文件**：
+- `indonesia-payroll-agent/package.json` / `indonesia-payroll-agent/pnpm-lock.yaml` — 增加并锁定 `exceljs@4.4.0`。
 - `indonesia-payroll-agent/prisma/schema.prisma` — 新增 ExportTemplateConfig、ExportPreview、ExportFile、ArchivePackage、CorrectionRun、VoidRecord。
 - `indonesia-payroll-agent/src/domain/exports/template-registry.ts` — 蓝色光标和三福模板配置。
 - `indonesia-payroll-agent/src/domain/exports/export-preview-service.ts` — workbook/sheet/header/人数/金额/模板结构预览。
@@ -347,12 +404,13 @@
 - `indonesia-payroll-agent/src/app/(app)/payroll-runs/[runId]/exports/page.tsx` — 导出预览和正式导出页面。
 
 **验收标准**：
-- 蓝色光标可导出对客薪酬明细、BPMP、BPA1，同结构默认按 workbook、sheet、header、必要列、人数、关键金额校验。
-- 三福可导出 SUM/对客交付文件，同结构默认按 workbook、sheet、header、必要列、人数、关键金额校验。
+- 蓝色光标可导出对客薪酬明细、BPMP、BPA1，按上述同结构口径校验。
+- 三福可导出 SUM/对客交付文件，按上述同结构口径校验。
 - 未锁定 run 只能导出带草稿/预览/非正式标识的文件。
 - 锁定后不能原地改，只能创建 correction run。
 - 正式导出必须重新校验 run 已锁定、阻断清零、高风险已放行、模板合法、客户确认未失效、审计可写；任一失败必须 fail closed。
 - 导出预览必须展示差异、人数、关键金额、模板结构和风险等级；正式导出记录导出人、角色、客户、run、文件名、目的和时间。
+- 若 Product-Spec Q-003 后续要求样式级一致，必须先回 product-spec-builder/dev-planner 更新本 Phase 验收。
 - `pnpm lint`、`pnpm test`、`pnpm build` 通过。
 
 ---
@@ -386,10 +444,10 @@
 
 **交付内容**：
 - 跑完整 P0：蓝色光标和三福从原始 Excel 到导出归档。
-- 补齐 Playwright smoke：任务台、run 详情、上传、映射确认、算薪确认、导出预览。
-- 补齐算薪单元测试：PPh21、BPJS、Gross Up、FX、THR、离职清税、取整。
-- 补齐 Agent golden eval、RBAC、脱敏、审计、prompt injection、安全放行测试。
-- 补齐高责任红队：权限矩阵、人工确认卡口、审计追踪、fail closed、回滚/correction、外部不可信输入。
+- 运行全量 PC 端 Playwright smoke：任务台、run 详情、上传、映射确认、算薪确认、导出预览；不做移动端和平板端兼容验收。
+- 运行全量算薪单元测试：PPh21、BPJS、Gross Up、FX、THR、离职清税、取整。
+- 运行全量 Agent golden eval、RBAC、脱敏、审计、prompt injection、安全放行回归。
+- 运行高责任红队回归：权限矩阵、人工确认卡口、审计追踪、fail closed、回滚/correction、外部不可信输入。
 - 输出 V1 验收报告，列出已通过项、保留待确认项和 P1 延后项。
 
 **关键文件**：
@@ -406,6 +464,7 @@
 - 蓝色光标和三福均可从 docs 原始 Excel 跑到导出归档。
 - RBAC、脱敏、审计、系统管理员不得业务放行测试通过。
 - 高责任门禁全部通过：R2+ 动作有预览/差异/理由/人工确认/审计，R3 动作有回滚或 correction 路径，外部输入无法触发工具调用或绕过审批。
+- Phase 14 只做全量回归、缺口收敛和验收报告；不得把前序 Phase 应有的 Agent eval、guardrail、RBAC、脱敏、预检查或核心 e2e 测试留到本 Phase 首次补。
 
 ---
 
@@ -422,11 +481,14 @@ flowchart TD
   P6 --> P7["Phase 7 Golden Eval"]
   P4 --> P8["Phase 8 映射/匹配/标准化"]
   P6 --> P8
+  P7 --> P8
   P8 --> P9["Phase 9 证据/确认/追问"]
+  P7 --> P9
   P5 --> P10["Phase 10 算薪引擎"]
   P8 --> P10
   P9 --> P10
   P10 --> P11["Phase 11 预检/风险/确认包"]
+  P7 --> P11
   P11 --> P12["Phase 12 导出/归档/更正"]
   P12 --> P13["Phase 13 发薪/申报证据"]
   P13 --> P14["Phase 14 全量回归"]
@@ -512,10 +574,10 @@ flowchart TD
 | `payroll_result_lines` | Phase 10 | 组件级结果行 |
 | `calculation_traces` | Phase 10 | 计算解释链 |
 | `customer_comparison_values` | Phase 10 | 客户计算值/对照值 |
-| `blocking_issues` | Phase 11 | 阻断项 |
+| `blocking_issues` | Phase 10 | 算薪前阻断项 |
+| `precheck_runs` | Phase 10 | 算薪前预检查运行 |
 | `high_risk_issues` | Phase 11 | 高风险项 |
 | `risk_approvals` | Phase 11 | 高风险业务放行 |
-| `precheck_runs` | Phase 11 | 预检查运行 |
 | `reconciliation_checks` | Phase 11 | 核查和对照差异 |
 | `payroll_confirmation_packages` | Phase 11 | 算薪确认包 |
 | `export_template_configs` | Phase 12 | 客户导出模板配置 |
@@ -537,23 +599,23 @@ flowchart TD
 |---|---:|---|
 | SCOPE-001 / REQ-002 / REQ-017 | Phase 3、Phase 14 | Payroll run 详情、任务台、搜索、权限联动验收 |
 | SCOPE-002 / REQ-003 | Phase 4 | 原始 Excel 多文件导入、解析、版本和单元格追溯 |
-| SCOPE-003 / REQ-004 | Phase 6、Phase 8 | Agent 映射草稿、人工确认、生效映射版本 |
+| SCOPE-003 / REQ-004 | Phase 6、Phase 7、Phase 8 | Agent 映射草稿、node eval 门禁、人工确认、生效映射版本 |
 | SCOPE-004 / REQ-005 | Phase 8 | 标准化输入、员工匹配、多行处理、门店维度 |
 | SCOPE-005 / REQ-001 | Phase 2、Phase 8 | 客户、员工主档、客户配置和版本快照 |
 | SCOPE-006 / REQ-008 | Phase 10 | 确定性算薪引擎、PayrollResult、CalculationTrace |
 | SCOPE-007 / REQ-009 | Phase 5、Phase 10、Phase 11 | 印尼 PPh21、BPJS、THR、Gross Up、FX、离职清税、规则版本 |
-| SCOPE-008 / REQ-007 | Phase 2、Phase 11、Phase 14 | 阻断项、高风险、业务放行、权限矩阵、审计 |
+| SCOPE-008 / REQ-007 | Phase 2、Phase 10、Phase 11、Phase 14 | 阻断项、高风险、业务放行、权限矩阵、审计 |
 | SCOPE-009 / REQ-011 | Phase 11 | 算薪确认包、摘要、下钻、锁定前复核 |
 | SCOPE-010 / REQ-012 | Phase 12 | 导出预览、模板校验、正式导出和导出审计 |
 | SCOPE-011 / REQ-013 | Phase 12 | 锁定、作废、删除限制、correction run |
 | SCOPE-012 / REQ-014 | Phase 13 | 历史归档、发薪记录、KS/TK 和 PPh21 申报证据 |
 | SCOPE-013 / REQ-015D | Phase 6、Phase 13、Phase 14 | Agent trace、资料库、记忆、版本治理、归档 |
-| SCOPE-013A / REQ-015A | Phase 6 | Agent 编排、工具契约、节点门禁、ToolInvocation |
-| SCOPE-013A / REQ-015B | Phase 7、Phase 14 | Golden eval、critical eval、发布门禁 |
-| SCOPE-013A / REQ-015C | Phase 7、Phase 14 | Guardrails、prompt injection、越权、泄密、安全红队 |
+| SCOPE-013A / REQ-015A | Phase 6 | Agent 编排、工具契约、context builder、trace 脱敏、节点门禁、ToolInvocation |
+| SCOPE-013A / REQ-015B | Phase 7、Phase 8、Phase 9、Phase 11、Phase 14 | Golden eval、critical eval、发布门禁和 node 级上线阻断 |
+| SCOPE-013A / REQ-015C | Phase 7、Phase 8、Phase 9、Phase 11、Phase 14 | Guardrails、prompt injection、越权、泄密、安全红队 |
 | SCOPE-014 / REQ-017 | Phase 2、Phase 3、Phase 14 | 任务台、搜索、客户隔离、脱敏、审计 |
 | REQ-006 | Phase 9 | 证据、客户确认、追问清单、确认失效 |
-| REQ-010 | Phase 11 | 预检查、核查、对照差异、环比和社保侧面核验 |
+| REQ-010 | Phase 10、Phase 11 | 算薪前预检查、算薪后核查、对照差异、环比和社保侧面核验 |
 | REQ-016 | Phase 5、Phase 14 | 规则版本、审批、回归测试和发布门禁 |
 | 非功能需求 / 完成定义 | Phase 1-14 | 每 Phase 四步走，最终在 Phase 14 做全量验收 |
 | Agent 系统规格 / Agent 工程化治理 | Phase 6、Phase 7、Phase 14 | Agent 自主边界、工具、上下文、eval、观测、事故处理 |
@@ -580,8 +642,12 @@ P1 延后范围不进入 V1 开发：企业微信自动同步、银行付款、�
 - Commit message 用 `feat`、`fix`、`refactor`、`chore` 前缀。
 - 包管理器：pnpm 11.7.0。
 - 每个 Phase 必跑：`pnpm lint`、`pnpm test`、`pnpm build`。
-- UI 相关 Phase 必补 Playwright smoke。
+- Phase 引入技术栈依赖时，必须在同 Phase 关键文件和验收标准中写明 `package.json` / `pnpm-lock.yaml` 更新和验证命令；不得只在技术栈表写版本。
+- UI 相关 Phase 必补 PC 端 Playwright smoke，至少覆盖 1440px 标准桌面；关键工作台还要抽查 1200px 和 1600px+。移动端和平板端不进入 V1 验收。
 - 算薪相关 Phase 必补 Vitest 单元测试。
-- Agent 相关 Phase 必补 golden eval 或 guardrail 测试。
+- Agent 相关 Phase 必补 golden eval 或 guardrail 测试；新增或修改 Agent node、prompt、model、RAG index、tool schema、guardrail 配置时，必须在同一 Phase 补齐并通过对应 eval，不准拖到 Phase 14。
+- R2/R3 Agent 工具必须有 approval/pending/preview 状态测试，证明人工确认前不会执行生效写操作。
+- 涉及 trace、日志或远程 tracing 的 Phase 必须补敏感字段脱敏测试，覆盖银行账号、证件号、NPWP、客户原文和 Excel 行摘要。
+- 涉及 Excel 解析的 Phase 必须补不可信文件测试，覆盖宏、外部链接、公式、超大文件、损坏文件和指令类文本。
 - 涉及数据库结构变更必须生成 Prisma migration，并在 Phase 验收中说明新增表或字段。
 - 不允许让 Agent 输出直接生效为映射、规则、放行、锁定或导出；所有生效动作必须经过系统状态机和人工确认。
