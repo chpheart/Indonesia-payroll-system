@@ -59,7 +59,7 @@
 
 **验收标准**：
 - 在 `indonesia-payroll-agent/` 下执行 `pnpm install`、`pnpm dev` 后可打开空任务台。
-- 本机 Node `22.16.0` 满足 Next.js 16.2.9 的 Node `>=20.9.0` 要求。
+- 本机 Node `25.9.0` 满足 Next.js 16.2.9 的 Node `>=20.9.0` 要求。
 - `package.json` 包含 `packageManager: "pnpm@11.7.0"` 和 Node engine。
 - `pnpm prisma db push` 或首次 migration 可连接本地 PostgreSQL。
 - `/api/health` 返回应用和数据库可用状态。
@@ -441,7 +441,7 @@ flowchart TD
 
 | 层级 | 技术 | 版本 | 说明 |
 |------|------|------:|------|
-| Runtime | Node.js | >=20.9.0，本机 22.16.0 | Next.js 16.2.9 运行要求；本机版本已满足 |
+| Runtime | Node.js | >=20.9.0，本机 25.9.0 | Next.js 16.2.9 运行要求；本机版本已满足 |
 | App | Next.js | 16.2.9 | App Router、内部 Web 应用、API routes |
 | UI | React | 19.2.7 | 任务台、run 详情、确认包 |
 | UI Style | CSS Modules + CSS variables | 内置 | 内部运营系统，优先密度、扫描、表格和状态清晰，不做营销页 |
