@@ -125,6 +125,85 @@ enum RunChangeSourceType {
   @@map("run_change_source_type")
 }
 
+enum RawInputSourceChannel {
+  WECHAT_TEXT
+  WECHAT_SCREENSHOT
+  CUSTOMER_EXCEL
+  CONTRACT
+  CUSTOMER_CONFIRMATION
+  INTERNAL_NOTE
+  OTHER
+
+  @@map("raw_input_source_channel")
+}
+
+enum RawInputType {
+  TEXT
+  IMAGE
+  EXCEL
+  PDF
+  DOCUMENT
+  NOTE
+  OTHER
+
+  @@map("raw_input_type")
+}
+
+enum RawInputStatus {
+  PENDING_ASSIGNMENT
+  PENDING_EXTRACTION
+  EXTRACTED_PENDING_REVIEW
+  PROPOSAL_GENERATED
+  NEEDS_QUESTION
+  ARCHIVED
+  REJECTED
+  VOIDED
+
+  @@map("raw_input_status")
+}
+
+enum FilePurpose {
+  EMPLOYEE_MASTER
+  MOVEMENT
+  PAYROLL_INPUT
+  ATTENDANCE
+  CONTRACT
+  CUSTOMER_CONFIRMATION
+  INTERNAL_NOTE
+  OTHER
+
+  @@map("file_purpose")
+}
+
+enum FileParseStatus {
+  PENDING
+  PARSED
+  BLOCKED
+  FAILED
+  SKIPPED
+
+  @@map("file_parse_status")
+}
+
+enum CaseItemType {
+  INTAKE_UNASSIGNED
+  LOW_CONFIDENCE
+  DUPLICATE_RISK
+  MISSING_INFORMATION
+  SECURITY_REVIEW
+  FILE_PARSE_BLOCKER
+
+  @@map("case_item_type")
+}
+
+enum CaseItemStatus {
+  OPEN
+  RESOLVED
+  CANCELLED
+
+  @@map("case_item_status")
+}
+
 enum AuditAction {
   CLIENT_CREATED
   CLIENT_ENABLED
@@ -150,6 +229,14 @@ enum AuditAction {
   HIGH_RISK_RELEASED
   RULE_VERSION_PUBLISHED
   CORRECTION_RUN_CREATED
+  RAW_INPUT_CREATED
+  RAW_INPUT_BOUND
+  RAW_INPUT_STATUS_CHANGED
+  FILE_UPLOADED
+  FILE_PARSE_COMPLETED
+  FILE_PARSE_BLOCKED
+  CASE_ITEM_CREATED
+  CASE_ITEM_RESOLVED
 
   @@map("audit_action")
 }
@@ -165,6 +252,10 @@ enum AuditObjectType {
   RULE_VERSION
   CORRECTION_RUN
   SENSITIVE_FIELD
+  RAW_INPUT_ITEM
+  UPLOADED_FILE_VERSION
+  WORKBOOK_PARSE
+  CASE_ITEM
 
   @@map("audit_object_type")
 }
@@ -180,24 +271,29 @@ enum AuditRiskLevel {
 }
 
 model User {
-  id               String                  @id @default(cuid())
-  email            String                  @unique
-  displayName      String                  @map("display_name")
-  status           UserStatus              @default(ACTIVE)
-  createdAt        DateTime                @default(now()) @map("created_at")
-  updatedAt        DateTime                @updatedAt @map("updated_at")
-  userRoles        UserRole[]
-  clientAccesses   ClientAccess[]          @relation("ClientAccessUser")
-  grantedAccesses  ClientAccess[]          @relation("ClientAccessGrantor")
-  createdAudits    AuditLog[]              @relation("AuditActor")
-  auditCorrections AuditCorrection[]       @relation("AuditCorrectionActor")
-  configVersions   ClientConfigVersion[]   @relation("ClientConfigVersionCreator")
-  employeeVersions EmployeeMasterVersion[] @relation("EmployeeMasterVersionCreator")
-  createdRuns      PayrollRun[]            @relation("PayrollRunCreator")
-  runAssignments   RunAssignment[]          @relation("RunAssignmentUser")
-  assignedRuns     RunAssignment[]          @relation("RunAssignmentAssigner")
-  triggeredEvents  RunStatusEvent[]         @relation("RunStatusEventTrigger")
-  completedReminders RunReminder[]          @relation("RunReminderCompleter")
+  id                 String                  @id @default(cuid())
+  email              String                  @unique
+  displayName        String                  @map("display_name")
+  status             UserStatus              @default(ACTIVE)
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+  userRoles          UserRole[]
+  clientAccesses     ClientAccess[]          @relation("ClientAccessUser")
+  grantedAccesses    ClientAccess[]          @relation("ClientAccessGrantor")
+  createdAudits      AuditLog[]              @relation("AuditActor")
+  auditCorrections   AuditCorrection[]       @relation("AuditCorrectionActor")
+  configVersions     ClientConfigVersion[]   @relation("ClientConfigVersionCreator")
+  employeeVersions   EmployeeMasterVersion[] @relation("EmployeeMasterVersionCreator")
+  createdRuns        PayrollRun[]            @relation("PayrollRunCreator")
+  runAssignments     RunAssignment[]         @relation("RunAssignmentUser")
+  assignedRuns       RunAssignment[]         @relation("RunAssignmentAssigner")
+  triggeredEvents    RunStatusEvent[]        @relation("RunStatusEventTrigger")
+  completedReminders RunReminder[]           @relation("RunReminderCompleter")
+  rawInputItems      RawInputItem[]          @relation("RawInputCreator")
+  uploadedFiles      UploadedFileVersion[]   @relation("UploadedFileUploader")
+  fileReplacements   FileReplacement[]       @relation("FileReplacementActor")
+  ownedCases         CaseItem[]              @relation("CaseItemOwner")
+  resolvedCases      CaseItem[]              @relation("CaseItemResolver")
 
   @@map("users")
 }
@@ -240,6 +336,9 @@ model Client {
   configVersions       ClientConfigVersion[]
   employees            Employee[]
   payrollRuns          PayrollRun[]
+  rawInputItems        RawInputItem[]
+  uploadedFileVersions UploadedFileVersion[]
+  caseItems            CaseItem[]
   auditLogs            AuditLog[]
 
   @@map("clients")
@@ -377,31 +476,34 @@ model EmployeeMasterVersion {
 }
 
 model PayrollRun {
-  id                               String             @id @default(cuid())
-  clientId                         String             @map("client_id")
-  payrollMonth                     String             @map("payroll_month")
-  status                           PayrollRunStatus   @default(DRAFT)
-  statusReason                     String?            @map("status_reason")
-  targetCompletionDate             DateTime?          @map("target_completion_date")
-  payDate                          DateTime?          @map("pay_date")
-  pendingIntakeAssignmentCount     Int                @default(0) @map("pending_intake_assignment_count")
-  pendingProposalReviewCount       Int                @default(0) @map("pending_proposal_review_count")
-  blockingIssueCount               Int                @default(0) @map("blocking_issue_count")
-  highRiskIssueCount               Int                @default(0) @map("high_risk_issue_count")
-  pendingCustomerConfirmationCount Int                @default(0) @map("pending_customer_confirmation_count")
-  createdById                      String?            @map("created_by_id")
-  lockedAt                         DateTime?          @map("locked_at")
-  exportedAt                       DateTime?          @map("exported_at")
-  archivedAt                       DateTime?          @map("archived_at")
-  voidedAt                         DateTime?          @map("voided_at")
-  correctedAt                      DateTime?          @map("corrected_at")
-  createdAt                        DateTime           @default(now()) @map("created_at")
-  updatedAt                        DateTime           @updatedAt @map("updated_at")
-  client                           Client             @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  createdBy                        User?              @relation("PayrollRunCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  id                               String                @id @default(cuid())
+  clientId                         String                @map("client_id")
+  payrollMonth                     String                @map("payroll_month")
+  status                           PayrollRunStatus      @default(DRAFT)
+  statusReason                     String?               @map("status_reason")
+  targetCompletionDate             DateTime?             @map("target_completion_date")
+  payDate                          DateTime?             @map("pay_date")
+  pendingIntakeAssignmentCount     Int                   @default(0) @map("pending_intake_assignment_count")
+  pendingProposalReviewCount       Int                   @default(0) @map("pending_proposal_review_count")
+  blockingIssueCount               Int                   @default(0) @map("blocking_issue_count")
+  highRiskIssueCount               Int                   @default(0) @map("high_risk_issue_count")
+  pendingCustomerConfirmationCount Int                   @default(0) @map("pending_customer_confirmation_count")
+  createdById                      String?               @map("created_by_id")
+  lockedAt                         DateTime?             @map("locked_at")
+  exportedAt                       DateTime?             @map("exported_at")
+  archivedAt                       DateTime?             @map("archived_at")
+  voidedAt                         DateTime?             @map("voided_at")
+  correctedAt                      DateTime?             @map("corrected_at")
+  createdAt                        DateTime              @default(now()) @map("created_at")
+  updatedAt                        DateTime              @updatedAt @map("updated_at")
+  client                           Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  createdBy                        User?                 @relation("PayrollRunCreator", fields: [createdById], references: [id], onDelete: SetNull)
   statusEvents                     RunStatusEvent[]
   assignments                      RunAssignment[]
   reminders                        RunReminder[]
+  rawInputItems                    RawInputItem[]
+  uploadedFileVersions             UploadedFileVersion[]
+  caseItems                        CaseItem[]
   auditLogs                        AuditLog[]
 
   @@unique([clientId, payrollMonth])
@@ -464,4 +566,192 @@ model RunReminder {
   @@index([status, dueAt])
   @@index([runId, status])
   @@map("run_reminders")
+}
+
+model RawInputItem {
+  id                    String                @id @default(cuid())
+  clientId              String?               @map("client_id")
+  payrollMonth          String?               @map("payroll_month")
+  runId                 String?               @map("run_id")
+  sourceChannel         RawInputSourceChannel @map("source_channel")
+  inputType             RawInputType          @map("input_type")
+  status                RawInputStatus        @default(PENDING_ASSIGNMENT)
+  originalText          String?               @map("original_text")
+  redactedSummary       String                @map("redacted_summary")
+  contentHash           String?               @map("content_hash")
+  attachmentKey         String?               @map("attachment_key")
+  attachmentFileName    String?               @map("attachment_file_name")
+  attachmentMimeType    String?               @map("attachment_mime_type")
+  attachmentSizeBytes   Int?                  @map("attachment_size_bytes")
+  duplicateGroupHash    String?               @map("duplicate_group_hash")
+  duplicateRiskScore    Float                 @default(0) @map("duplicate_risk_score")
+  evidenceCandidateRefs String[]              @default([]) @map("evidence_candidate_refs")
+  securityFlags         String[]              @default([]) @map("security_flags")
+  createdById           String?               @map("created_by_id")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
+  client                Client?               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun            PayrollRun?           @relation(fields: [runId], references: [id], onDelete: Restrict)
+  createdBy             User?                 @relation("RawInputCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  uploadedFiles         UploadedFileVersion[]
+  caseItems             CaseItem[]
+
+  @@index([clientId, payrollMonth, status])
+  @@index([runId, status])
+  @@index([contentHash])
+  @@map("raw_input_items")
+}
+
+model UploadedFileVersion {
+  id                  String                @id @default(cuid())
+  rawInputItemId      String?               @map("raw_input_item_id")
+  clientId            String?               @map("client_id")
+  payrollMonth        String?               @map("payroll_month")
+  runId               String?               @map("run_id")
+  purpose             FilePurpose
+  versionNumber       Int                   @map("version_number")
+  fileName            String                @map("file_name")
+  extension           String
+  mimeType            String                @map("mime_type")
+  storageKey          String                @map("storage_key")
+  sha256              String
+  sizeBytes           Int                   @map("size_bytes")
+  parseStatus         FileParseStatus       @default(PENDING) @map("parse_status")
+  parseErrorCode      String?               @map("parse_error_code")
+  parseErrorMessage   String?               @map("parse_error_message")
+  riskFlags           String[]              @default([]) @map("risk_flags")
+  replacesFileId      String?               @map("replaces_file_id")
+  uploadedById        String?               @map("uploaded_by_id")
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+  rawInputItem        RawInputItem?         @relation(fields: [rawInputItemId], references: [id], onDelete: SetNull)
+  client              Client?               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun          PayrollRun?           @relation(fields: [runId], references: [id], onDelete: Restrict)
+  replacesFile        UploadedFileVersion?  @relation("FileVersionReplacement", fields: [replacesFileId], references: [id], onDelete: SetNull)
+  replacementFiles    UploadedFileVersion[] @relation("FileVersionReplacement")
+  uploadedBy          User?                 @relation("UploadedFileUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  workbookParses      WorkbookParse[]
+  oldFileReplacements FileReplacement[]     @relation("FileReplacementOld")
+  newFileReplacements FileReplacement[]     @relation("FileReplacementNew")
+  caseItems           CaseItem[]
+
+  @@unique([rawInputItemId, versionNumber])
+  @@index([clientId, payrollMonth, purpose])
+  @@index([runId, parseStatus])
+  @@index([sha256])
+  @@map("uploaded_file_versions")
+}
+
+model WorkbookParse {
+  id                    String              @id @default(cuid())
+  fileVersionId         String              @map("file_version_id")
+  parserVersion         String              @map("parser_version")
+  status                FileParseStatus
+  workbookName          String?             @map("workbook_name")
+  sheetCount            Int                 @default(0) @map("sheet_count")
+  formulaCellCount      Int                 @default(0) @map("formula_cell_count")
+  mergedRangeCount      Int                 @default(0) @map("merged_range_count")
+  externalLinkCount     Int                 @default(0) @map("external_link_count")
+  dangerousContentFlags String[]            @default([]) @map("dangerous_content_flags")
+  errorCode             String?             @map("error_code")
+  errorMessage          String?             @map("error_message")
+  startedAt             DateTime            @default(now()) @map("started_at")
+  completedAt           DateTime?           @map("completed_at")
+  fileVersion           UploadedFileVersion @relation(fields: [fileVersionId], references: [id], onDelete: Restrict)
+  sheets                WorkbookSheet[]
+  cells                 WorkbookCell[]
+
+  @@index([fileVersionId, startedAt])
+  @@map("workbook_parses")
+}
+
+model WorkbookSheet {
+  id              String         @id @default(cuid())
+  workbookParseId String         @map("workbook_parse_id")
+  sheetName       String         @map("sheet_name")
+  sheetIndex      Int            @map("sheet_index")
+  rowCount        Int            @default(0) @map("row_count")
+  columnCount     Int            @default(0) @map("column_count")
+  effectiveRange  String?        @map("effective_range")
+  headerRowIndex  Int?           @map("header_row_index")
+  headerValues    Json           @default("[]") @map("header_values")
+  sampleRows      Json           @default("[]") @map("sample_rows")
+  mergedRanges    Json           @default("[]") @map("merged_ranges")
+  hasHeader       Boolean        @default(false) @map("has_header")
+  workbookParse   WorkbookParse  @relation(fields: [workbookParseId], references: [id], onDelete: Restrict)
+  cells           WorkbookCell[]
+
+  @@unique([workbookParseId, sheetName])
+  @@index([workbookParseId, sheetIndex])
+  @@map("workbook_sheets")
+}
+
+model WorkbookCell {
+  id              String        @id @default(cuid())
+  workbookParseId String        @map("workbook_parse_id")
+  sheetId         String        @map("sheet_id")
+  sheetName       String        @map("sheet_name")
+  address         String
+  rowIndex        Int           @map("row_index")
+  columnIndex     Int           @map("column_index")
+  rawValue        String?       @map("raw_value")
+  displayValue    String?       @map("display_value")
+  formulaText     String?       @map("formula_text")
+  numberFormat    String?       @map("number_format")
+  mergedRange     String?       @map("merged_range")
+  isHeader        Boolean       @default(false) @map("is_header")
+  workbookParse   WorkbookParse @relation(fields: [workbookParseId], references: [id], onDelete: Restrict)
+  sheet           WorkbookSheet @relation(fields: [sheetId], references: [id], onDelete: Restrict)
+
+  @@unique([sheetId, address])
+  @@index([workbookParseId, sheetName])
+  @@map("workbook_cells")
+}
+
+model FileReplacement {
+  id          String              @id @default(cuid())
+  oldFileId   String              @map("old_file_id")
+  newFileId   String              @map("new_file_id")
+  reason      String
+  createdById String?             @map("created_by_id")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  oldFile     UploadedFileVersion @relation("FileReplacementOld", fields: [oldFileId], references: [id], onDelete: Restrict)
+  newFile     UploadedFileVersion @relation("FileReplacementNew", fields: [newFileId], references: [id], onDelete: Restrict)
+  createdBy   User?               @relation("FileReplacementActor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([oldFileId, newFileId])
+  @@index([newFileId])
+  @@map("file_replacements")
+}
+
+model CaseItem {
+  id             String               @id @default(cuid())
+  clientId       String?              @map("client_id")
+  runId          String?              @map("run_id")
+  rawInputItemId String?              @map("raw_input_item_id")
+  fileVersionId  String?              @map("file_version_id")
+  type           CaseItemType
+  riskLevel      AuditRiskLevel       @default(R1) @map("risk_level")
+  status         CaseItemStatus       @default(OPEN)
+  title          String
+  detail         String
+  ownerId        String?              @map("owner_id")
+  resolvedById   String?              @map("resolved_by_id")
+  resolutionNote String?              @map("resolution_note")
+  metadata       Json                 @default("{}")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  resolvedAt     DateTime?            @map("resolved_at")
+  client         Client?              @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun     PayrollRun?          @relation(fields: [runId], references: [id], onDelete: Restrict)
+  rawInputItem   RawInputItem?        @relation(fields: [rawInputItemId], references: [id], onDelete: SetNull)
+  fileVersion    UploadedFileVersion? @relation(fields: [fileVersionId], references: [id], onDelete: SetNull)
+  owner          User?                @relation("CaseItemOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  resolvedBy     User?                @relation("CaseItemResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([clientId, status])
+  @@index([runId, status])
+  @@index([rawInputItemId, status])
+  @@index([fileVersionId, status])
+  @@map("case_items")
 }

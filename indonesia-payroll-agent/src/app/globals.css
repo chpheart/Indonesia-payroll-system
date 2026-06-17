@@ -1,3 +1,5 @@
+@import "./phase4.css";
+
 :root {
   --background: #f7f8fa;
   --foreground: #111827;
@@ -275,7 +277,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .evidence-chip.missing { color: var(--danger); background: #fbeae8; }
 .sensitive-mask { color: var(--muted); background: var(--table-head); }
 .sensitive-mask strong { color: var(--foreground); }
-
 @media (max-width: 1200px) {
   .metric-grid, .control-grid { grid-template-columns: 1fr; }
   .filter-bar, .inline-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -283,4 +284,5 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
   .task-panel, .approval-drawer { position: static; }
   .bottom-action-bar { left: 0; }
   .run-entry-grid, .run-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .file-meta-grid, .sheet-preview-grid, .file-upload-form, .intake-inline-form { grid-template-columns: 1fr; }
 }

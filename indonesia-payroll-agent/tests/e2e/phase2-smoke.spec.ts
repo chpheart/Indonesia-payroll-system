@@ -57,4 +57,16 @@ test.describe("Phase 2 desktop shell", () => {
     await expect(page.getByLabel("搜索员工")).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
+
+  test("exposes the Phase 4 intake inbox controls at desktop width", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/intake");
+
+    await expect(page.getByRole("heading", { name: "AI Intake Inbox" })).toBeVisible();
+    await expect(page.getByLabel("AI Intake 指标")).toBeVisible();
+    await expect(page.getByLabel("来源渠道")).toBeVisible();
+    await expect(page.getByLabel("输入类型")).toBeVisible();
+    await expect(page.getByLabel("原始文本")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
 });

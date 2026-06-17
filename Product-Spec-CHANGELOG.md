@@ -1,5 +1,25 @@
 # 变更记录
 
+## [v1.2] - 2026-06-17
+
+### 新增
+
+- 新增产品定位原则：内部优先的 AI-native EOR / Payroll Ops System，明确“企业微信是入口，AI 是整理和调度层，ledger 是事实源，workflow 是责任边界”。
+- 新增 AI Intake Inbox 范围、流程和需求，支持企业微信文本/截图、Excel、合同、客户确认和内部备注进入 RawInputItem 队列。
+- 新增 ChangeProposal / ChangeLedger 需求，明确 AI 抽取结果必须先成为 proposal，经人工审核后才能写入正式变更 ledger。
+- 新增 Customer Confirmation Pack 需求，要求按 payroll run 汇总本月变更、缺失信息、异常项、需确认事项和建议话术，并绑定客户回复证据和覆盖范围。
+- 新增 RawInputItem、ChangeProposal、ChangeLedgerEntry、CustomerConfirmationPack、CaseItem 等核心实体及其关系。
+- 新增 Intake 分类、变更抽取、客户确认包生成等 Agent workflow node、AI 能力规格和 golden eval 维度。
+
+### 修改
+
+- 修改 Payroll Run 端到端流程，加入 raw input -> AI extraction -> proposed change -> human review -> confirmed ledger -> payroll run 链路。
+- 修改证据关联范围，补充 RawInputItem、ChangeProposal、ChangeLedgerEntry 和 CustomerConfirmationPack。
+- 修改 MVP 完成定义，加入 AI Intake、ChangeProposal/ChangeLedger 和 Customer Confirmation Pack 的可追溯验收。
+- 修改 Agent 系统规格，补充 intake、proposal、客户确认包的自主性边界、工具能力、上下文记忆和质量观测指标。
+
+---
+
 ## [v1.1] - 2026-06-15
 
 ### 新增

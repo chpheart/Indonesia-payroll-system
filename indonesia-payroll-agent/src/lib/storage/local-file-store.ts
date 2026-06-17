@@ -17,7 +17,7 @@ function resolveStorePath(key: string): string {
 
   const storeRoot = getOptionalEnv("LOCAL_FILE_STORE_ROOT", "./storage/local");
 
-  return path.resolve(process.cwd(), storeRoot, normalizedKey);
+  return path.resolve(/* turbopackIgnore: true */ process.cwd(), storeRoot, normalizedKey);
 }
 
 export async function putObject(key: string, data: Buffer): Promise<StoredObject> {

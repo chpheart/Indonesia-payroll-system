@@ -1,0 +1,47 @@
+.intake-dashboard .task-panel { min-width: 0; }
+.intake-table td .risk-badge, .intake-table td .status-pill { margin-top: 6px; }
+.intake-create-form textarea { min-height: 150px; }
+.intake-inline-form {
+  grid-template-columns: 160px 140px minmax(320px, 1fr) 120px;
+  padding-bottom: 16px;
+}
+.intake-inline-form textarea { min-height: 82px; }
+.file-upload-form {
+  grid-template-columns: 160px minmax(260px, 1fr) minmax(220px, 1fr) minmax(180px, 1fr) 112px;
+  padding-bottom: 16px;
+}
+.file-upload-form button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.form-status { grid-column: 1 / -1; font-size: 12px; font-weight: 700; }
+.form-status.success { color: var(--success); }
+.form-status.error { color: var(--danger); }
+.form-status.uploading { color: var(--info); }
+.file-preview-list { display: grid; gap: 12px; padding: 16px; }
+.file-preview-card {
+  display: grid; gap: 12px; border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px; background: #fff;
+}
+.file-preview-card header, .sheet-title {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+}
+.file-preview-card header span, .sheet-title span, .file-meta-grid span {
+  display: block; color: var(--muted); font-size: 12px;
+}
+.file-meta-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;
+  border: 1px solid var(--border-soft); border-radius: 6px; padding: 8px; background: #fafbfc;
+}
+.sheet-preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.sheet-preview { border: 1px solid var(--border-soft); border-radius: 6px; padding: 10px; background: #fafbfc; }
+.header-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.header-strip span {
+  max-width: 180px; overflow: hidden; border: 1px solid var(--border); border-radius: 4px;
+  padding: 2px 6px; color: #374151; background: #fff; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px;
+}
+.sample-row-list { display: grid; gap: 4px; margin-top: 8px; color: var(--muted); font-size: 12px; }
+.sample-row-list p { overflow-wrap: anywhere; }
+.formula-list { display: grid; gap: 4px; margin-top: 8px; }
+.formula-list span {
+  border-left: 3px solid var(--info); padding-left: 7px; color: #1d4ed8; font-size: 12px;
+  overflow-wrap: anywhere;
+}

@@ -52,7 +52,7 @@ export function AppShell({
         <nav className="nav-list" aria-label="主导航">
           {navItems.map((item, index) => {
             const Icon = item.icon;
-            const disabled = [1, 5, 6, 7].includes(index);
+            const disabled = [5, 6, 7].includes(index);
             return disabled ? (
               <span className="nav-link disabled" key={`${item.href}-${item.label}`}>
                 <Icon aria-hidden size={18} />
