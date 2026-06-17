@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:e2e": "echo \"Frontend skipped: no Playwright UI smoke configured.\"",
+    "test:e2e": "playwright test",
     "typecheck": "prisma generate && tsc --noEmit",
     "db:push": "prisma db push",
     "prisma:generate": "prisma generate"

@@ -6,3 +6,297 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+
+  @@map("user_status")
+}
+
+enum RoleCode {
+  DELIVERY_SPECIALIST
+  PAYROLL_SPECIALIST
+  PAYROLL_LEAD
+  RULE_ADMIN
+  SYSTEM_ADMIN
+
+  @@map("role_code")
+}
+
+enum ClientStatus {
+  ACTIVE
+  DISABLED
+
+  @@map("client_status")
+}
+
+enum ClientAccessStatus {
+  ACTIVE
+  REVOKED
+
+  @@map("client_access_status")
+}
+
+enum ConfigVersionStatus {
+  DRAFT
+  EFFECTIVE
+  SUPERSEDED
+
+  @@map("config_version_status")
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  TERMINATED
+  DISABLED
+
+  @@map("employee_status")
+}
+
+enum EmployeeMasterVersionStatus {
+  DRAFT
+  EFFECTIVE
+  SUPERSEDED
+
+  @@map("employee_master_version_status")
+}
+
+enum AuditAction {
+  CLIENT_CREATED
+  CLIENT_ENABLED
+  CLIENT_DISABLED
+  CLIENT_DELETE_REJECTED
+  CLIENT_ACCESS_GRANTED
+  CLIENT_ACCESS_REVOKED
+  CLIENT_CONFIG_VERSION_CREATED
+  EMPLOYEE_CREATED
+  EMPLOYEE_DISABLED
+  EMPLOYEE_STATUS_UPDATED
+  EMPLOYEE_DELETE_REJECTED
+  EMPLOYEE_MASTER_VERSION_CREATED
+  SENSITIVE_FIELD_REVEALED
+  SENSITIVE_FIELD_COPIED
+  EXPORT_CREATED
+  PAYROLL_RUN_LOCKED
+  HIGH_RISK_RELEASED
+  RULE_VERSION_PUBLISHED
+  CORRECTION_RUN_CREATED
+
+  @@map("audit_action")
+}
+
+enum AuditObjectType {
+  USER
+  CLIENT
+  CLIENT_CONFIG_VERSION
+  EMPLOYEE
+  EMPLOYEE_MASTER_VERSION
+  PAYROLL_RUN
+  EXPORT_FILE
+  RULE_VERSION
+  CORRECTION_RUN
+  SENSITIVE_FIELD
+
+  @@map("audit_object_type")
+}
+
+enum AuditRiskLevel {
+  R0
+  R1
+  R2
+  R3
+  R4
+
+  @@map("audit_risk_level")
+}
+
+model User {
+  id               String                  @id @default(cuid())
+  email            String                  @unique
+  displayName      String                  @map("display_name")
+  status           UserStatus              @default(ACTIVE)
+  createdAt        DateTime                @default(now()) @map("created_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
+  userRoles        UserRole[]
+  clientAccesses   ClientAccess[]          @relation("ClientAccessUser")
+  grantedAccesses  ClientAccess[]          @relation("ClientAccessGrantor")
+  createdAudits    AuditLog[]              @relation("AuditActor")
+  auditCorrections AuditCorrection[]       @relation("AuditCorrectionActor")
+  configVersions   ClientConfigVersion[]   @relation("ClientConfigVersionCreator")
+  employeeVersions EmployeeMasterVersion[] @relation("EmployeeMasterVersionCreator")
+
+  @@map("users")
+}
+
+model Role {
+  id             String         @id @default(cuid())
+  code           RoleCode       @unique
+  name           String
+  description    String
+  createdAt      DateTime       @default(now()) @map("created_at")
+  userRoles      UserRole[]
+  clientAccesses ClientAccess[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  roleId     String   @map("role_id")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model Client {
+  id                   String                @id @default(cuid())
+  code                 String                @unique
+  name                 String
+  legalEntityName      String?               @map("legal_entity_name")
+  status               ClientStatus          @default(ACTIVE)
+  hasHistoricalPayroll Boolean               @default(false) @map("has_historical_payroll")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  accesses             ClientAccess[]
+  configVersions       ClientConfigVersion[]
+  employees            Employee[]
+  auditLogs            AuditLog[]
+
+  @@map("clients")
+}
+
+model ClientAccess {
+  id          String             @id @default(cuid())
+  userId      String             @map("user_id")
+  clientId    String             @map("client_id")
+  roleId      String?            @map("role_id")
+  status      ClientAccessStatus @default(ACTIVE)
+  grantedById String?            @map("granted_by_id")
+  grantedAt   DateTime           @default(now()) @map("granted_at")
+  revokedAt   DateTime?          @map("revoked_at")
+  user        User               @relation("ClientAccessUser", fields: [userId], references: [id], onDelete: Restrict)
+  client      Client             @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  role        Role?              @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  grantedBy   User?              @relation("ClientAccessGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, clientId, roleId])
+  @@index([clientId])
+  @@map("client_accesses")
+}
+
+model AuditLog {
+  id             String            @id @default(cuid())
+  action         AuditAction
+  objectType     AuditObjectType   @map("object_type")
+  objectId       String            @map("object_id")
+  riskLevel      AuditRiskLevel    @map("risk_level")
+  actorUserId    String?           @map("actor_user_id")
+  actorEmail     String            @map("actor_email")
+  actorRoleCodes String[]          @default([]) @map("actor_role_codes")
+  clientId       String?           @map("client_id")
+  runId          String?           @map("run_id")
+  purpose        String?
+  ipAddress      String?           @map("ip_address")
+  userAgent      String?           @map("user_agent")
+  metadata       Json              @default("{}")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  actor          User?             @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  client         Client?           @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  corrections    AuditCorrection[]
+
+  @@index([clientId, createdAt])
+  @@index([runId, createdAt])
+  @@index([action, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("audit_logs")
+}
+
+model AuditCorrection {
+  id             String   @id @default(cuid())
+  auditLogId     String   @map("audit_log_id")
+  note           String
+  createdById    String?  @map("created_by_id")
+  createdByEmail String   @map("created_by_email")
+  createdAt      DateTime @default(now()) @map("created_at")
+  auditLog       AuditLog @relation(fields: [auditLogId], references: [id], onDelete: Restrict)
+  createdBy      User?    @relation("AuditCorrectionActor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([auditLogId, createdAt])
+  @@map("audit_corrections")
+}
+
+model ClientConfigVersion {
+  id             String              @id @default(cuid())
+  clientId       String              @map("client_id")
+  versionNumber  Int                 @map("version_number")
+  effectiveMonth String              @map("effective_month")
+  payrollDay     Int?                @map("payroll_day")
+  templateCode   String?             @map("template_code")
+  grossUpDefault Boolean             @default(false) @map("gross_up_default")
+  bpjsConfig     Json                @default("{}") @map("bpjs_config")
+  ruleConfig     Json                @default("{}") @map("rule_config")
+  evidenceRefs   String[]            @default([]) @map("evidence_refs")
+  changeReason   String              @map("change_reason")
+  status         ConfigVersionStatus @default(DRAFT)
+  createdById    String?             @map("created_by_id")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  confirmedAt    DateTime?           @map("confirmed_at")
+  client         Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  createdBy      User?               @relation("ClientConfigVersionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([clientId, versionNumber])
+  @@index([clientId, status])
+  @@map("client_config_versions")
+}
+
+model Employee {
+  id                   String                  @id @default(cuid())
+  clientId             String                  @map("client_id")
+  employeeCode         String                  @map("employee_code")
+  fullName             String                  @map("full_name")
+  status               EmployeeStatus          @default(ACTIVE)
+  workCity             String?                 @map("work_city")
+  nikOrPassport        String?                 @map("nik_or_passport")
+  npwp                 String?
+  bpjsHealthNumber     String?                 @map("bpjs_health_number")
+  bpjsEmploymentNumber String?                 @map("bpjs_employment_number")
+  bankName             String?                 @map("bank_name")
+  bankAccountNumber    String?                 @map("bank_account_number")
+  hasHistoricalPayroll Boolean                 @default(false) @map("has_historical_payroll")
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+  client               Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  masterVersions       EmployeeMasterVersion[]
+
+  @@unique([clientId, employeeCode])
+  @@index([clientId, status])
+  @@index([clientId, fullName])
+  @@map("employees")
+}
+
+model EmployeeMasterVersion {
+  id             String                      @id @default(cuid())
+  employeeId     String                      @map("employee_id")
+  versionNumber  Int                         @map("version_number")
+  effectiveMonth String                      @map("effective_month")
+  status         EmployeeMasterVersionStatus @default(DRAFT)
+  changedFields  Json                        @default("{}") @map("changed_fields")
+  snapshot       Json                        @default("{}")
+  evidenceRefs   String[]                    @default([]) @map("evidence_refs")
+  changeReason   String                      @map("change_reason")
+  createdById    String?                     @map("created_by_id")
+  createdAt      DateTime                    @default(now()) @map("created_at")
+  confirmedAt    DateTime?                   @map("confirmed_at")
+  employee       Employee                    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  createdBy      User?                       @relation("EmployeeMasterVersionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([employeeId, versionNumber])
+  @@index([employeeId, status])
+  @@map("employee_master_versions")
+}
