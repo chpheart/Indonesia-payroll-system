@@ -23,6 +23,18 @@ test.describe("Phase 2 desktop shell", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test("shows the Phase 3 payroll run task console at desktop width", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/payroll-runs");
+
+    await expect(page.getByRole("heading", { name: "Payroll Runs" })).toBeVisible();
+    await expect(page.getByLabel("任务台指标")).toBeVisible();
+    await expect(page.getByLabel("客户筛选")).toBeVisible();
+    await expect(page.getByLabel("状态筛选")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "我的待办" })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+
   test("exposes audit filters and detail-safe empty state", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/audit");

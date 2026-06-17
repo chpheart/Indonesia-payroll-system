@@ -13,8 +13,12 @@ export const PERMISSION_CODES = [
   "client.edit",
   "employee.view",
   "employee.edit",
+  "payrollRun.create",
+  "payrollRun.update",
   "sensitive.view",
   "export.download",
+  "payrollRun.void",
+  "correctionRun.create",
   "calculation.execute",
   "payroll.lock",
   "highRisk.release",
@@ -38,8 +42,12 @@ export type ClientScopedAction =
   | "editClient"
   | "viewEmployee"
   | "editEmployee"
+  | "createPayrollRun"
+  | "updatePayrollRun"
   | "viewSensitive"
   | "downloadExport"
+  | "voidPayrollRun"
+  | "createCorrectionRun"
   | "executeCalculation"
   | "lockPayroll"
   | "releaseHighRisk"
@@ -52,6 +60,8 @@ const ROLE_PERMISSION_MATRIX: Record<RoleCode, PermissionCode[]> = {
     "client.view",
     "employee.view",
     "employee.edit",
+    "payrollRun.create",
+    "payrollRun.update",
     "sensitive.view",
     "export.download",
     "audit.view",
@@ -59,6 +69,8 @@ const ROLE_PERMISSION_MATRIX: Record<RoleCode, PermissionCode[]> = {
   PAYROLL_SPECIALIST: [
     "client.view",
     "employee.view",
+    "payrollRun.create",
+    "payrollRun.update",
     "sensitive.view",
     "export.download",
     "calculation.execute",
@@ -68,11 +80,15 @@ const ROLE_PERMISSION_MATRIX: Record<RoleCode, PermissionCode[]> = {
   PAYROLL_LEAD: [
     "client.view",
     "employee.view",
+    "payrollRun.create",
+    "payrollRun.update",
     "sensitive.view",
     "export.download",
     "calculation.execute",
     "payroll.lock",
     "highRisk.release",
+    "payrollRun.void",
+    "correctionRun.create",
     "rules.approve",
     "audit.view",
   ],
@@ -93,8 +109,12 @@ const ACTION_PERMISSION_MAP: Record<ClientScopedAction, PermissionCode> = {
   editClient: "client.edit",
   viewEmployee: "employee.view",
   editEmployee: "employee.edit",
+  createPayrollRun: "payrollRun.create",
+  updatePayrollRun: "payrollRun.update",
   viewSensitive: "sensitive.view",
   downloadExport: "export.download",
+  voidPayrollRun: "payrollRun.void",
+  createCorrectionRun: "correctionRun.create",
   executeCalculation: "calculation.execute",
   lockPayroll: "payroll.lock",
   releaseHighRisk: "highRisk.release",
@@ -106,6 +126,8 @@ const ACTION_PERMISSION_MAP: Record<ClientScopedAction, PermissionCode> = {
 const BUSINESS_APPROVAL_ACTIONS = new Set<ClientScopedAction>([
   "lockPayroll",
   "releaseHighRisk",
+  "voidPayrollRun",
+  "createCorrectionRun",
   "approveRules",
 ]);
 

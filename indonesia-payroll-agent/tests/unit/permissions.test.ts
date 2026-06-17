@@ -48,6 +48,12 @@ describe("permissions", () => {
     expect(canPerformClientAction(payrollLeadActor, "releaseHighRisk", "client-b")).toBe(false);
   });
 
+  it("separates payroll run creation and updates from business approvals", () => {
+    expect(canPerformClientAction(deliveryActor, "createPayrollRun", "client-a")).toBe(true);
+    expect(canPerformClientAction(deliveryActor, "updatePayrollRun", "client-a")).toBe(true);
+    expect(canPerformClientAction(deliveryActor, "lockPayroll", "client-a")).toBe(false);
+  });
+
   it("lets system admins see all clients but rejects business approvals", () => {
     expect(canPerformClientAction(systemAdminActor, "viewClient", "client-x")).toBe(true);
     expect(canPerformClientAction(systemAdminActor, "downloadExport", "client-x")).toBe(true);
