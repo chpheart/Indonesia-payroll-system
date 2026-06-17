@@ -245,6 +245,7 @@ enum AuditAction {
   FX_RATE_VERSION_CREATED
   FX_RATE_VERSION_CONFIRMED
   REGRESSION_RUN_RECORDED
+  AGENT_RUN_CREATED
 
   @@map("audit_action")
 }
@@ -268,6 +269,10 @@ enum AuditObjectType {
   UPLOADED_FILE_VERSION
   WORKBOOK_PARSE
   CASE_ITEM
+  AGENT_RUN
+  AGENT_STEP
+  TOOL_INVOCATION
+  GUARDRAIL_RESULT
 
   @@map("audit_object_type")
 }
@@ -371,6 +376,111 @@ enum RegressionRunStatus {
   @@map("regression_run_status")
 }
 
+enum AgentVersionStatus {
+  DRAFT
+  INTERNAL_TEST
+  RELEASED
+  DEPRECATED
+  REVOKED
+
+  @@map("agent_version_status")
+}
+
+enum AgentRunStatus {
+  PENDING
+  RUNNING
+  WAITING_FOR_APPROVAL
+  SUCCEEDED
+  FAILED
+  CANCELLED
+
+  @@map("agent_run_status")
+}
+
+enum AgentStepStatus {
+  PENDING
+  RUNNING
+  WAITING_FOR_APPROVAL
+  SUCCEEDED
+  FAILED
+  SKIPPED
+
+  @@map("agent_step_status")
+}
+
+enum AgentNodeType {
+  INTAKE_CLASSIFICATION
+  EXCEL_STRUCTURE
+  CHANGE_EXTRACTION
+  FIELD_MAPPING
+  EMPLOYEE_MATCHING
+  QUESTION_GENERATION
+  EVIDENCE_LINKING
+  PRECHECK_ADVICE
+  CUSTOMER_CONFIRMATION_PACK
+  RECONCILIATION_EXPLANATION
+  CONFIRMATION_SUMMARY
+
+  @@map("agent_node_type")
+}
+
+enum ToolInvocationStatus {
+  PENDING
+  PREVIEW
+  WAITING_FOR_APPROVAL
+  SUCCEEDED
+  FAILED
+  BLOCKED
+  SKIPPED
+
+  @@map("tool_invocation_status")
+}
+
+enum GuardrailSeverity {
+  INFO
+  WARNING
+  CRITICAL
+
+  @@map("guardrail_severity")
+}
+
+enum GuardrailAction {
+  PASS
+  FLAG
+  BLOCK
+  REDACT
+  NEEDS_REVIEW
+
+  @@map("guardrail_action")
+}
+
+enum EvalCaseType {
+  GOLDEN
+  GUARDRAIL
+  PERMISSION
+  RAG_CITATION
+  REGRESSION
+
+  @@map("eval_case_type")
+}
+
+enum EvalRunStatus {
+  PENDING
+  PASSED
+  FAILED
+  BLOCKED
+
+  @@map("eval_run_status")
+}
+
+enum EvalResultStatus {
+  PASSED
+  FAILED
+  BLOCKED
+
+  @@map("eval_result_status")
+}
+
 model User {
   id                 String                  @id @default(cuid())
   email              String                  @unique
@@ -405,6 +515,12 @@ model User {
   fxRatesCreated     FXRateVersion[]         @relation("FXRateCreator")
   fxRatesConfirmed   FXRateVersion[]         @relation("FXRateConfirmer")
   regressionRuns     RegressionRun[]         @relation("RegressionRunActor")
+  promptVersions     PromptVersion[]         @relation("PromptVersionCreator")
+  modelVersions      ModelVersion[]          @relation("ModelVersionCreator")
+  retrievalIndexes   RetrievalIndexVersion[] @relation("RetrievalIndexCreator")
+  toolSchemaVersions ToolSchemaVersion[]     @relation("ToolSchemaCreator")
+  agentRuns          AgentRun[]              @relation("AgentRunTrigger")
+  evalRuns           EvalRun[]               @relation("EvalRunActor")
 
   @@map("users")
 }
@@ -454,6 +570,7 @@ model Client {
   componentAliases     ClientComponentAlias[]
   ruleVersions         RuleVersion[]
   fxRateVersions       FXRateVersion[]
+  agentRuns            AgentRun[]
 
   @@map("clients")
 }
@@ -622,6 +739,7 @@ model PayrollRun {
   uploadedFileVersions             UploadedFileVersion[]
   caseItems                        CaseItem[]
   auditLogs                        AuditLog[]
+  agentRuns                        AgentRun[]
 
   @@unique([clientId, payrollMonth])
   @@index([status, targetCompletionDate])
@@ -1021,4 +1139,310 @@ model RegressionRun {
   @@unique([ruleVersionId, datasetCode, scenarioName])
   @@index([ruleVersionId, status])
   @@map("regression_runs")
+}
+
+model PromptVersion {
+  id                  String             @id @default(cuid())
+  promptKey           String             @map("prompt_key")
+  versionNumber       Int                @map("version_number")
+  status              AgentVersionStatus @default(DRAFT)
+  content             Json               @default("{}")
+  evalBindingRef      String?            @map("eval_binding_ref")
+  guardrailBindingRef String?            @map("guardrail_binding_ref")
+  changeSummary       String             @map("change_summary")
+  createdById         String?            @map("created_by_id")
+  releasedAt          DateTime?          @map("released_at")
+  revokedAt           DateTime?          @map("revoked_at")
+  revocationReason    String?            @map("revocation_reason")
+  revocationImpactScope Json             @default("{}") @map("revocation_impact_scope")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+  createdBy           User?              @relation("PromptVersionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  agentRuns           AgentRun[]
+
+  @@unique([promptKey, versionNumber])
+  @@index([status, createdAt])
+  @@map("prompt_versions")
+}
+
+model ModelVersion {
+  id             String             @id @default(cuid())
+  modelKey       String             @map("model_key")
+  versionNumber  Int                @map("version_number")
+  provider       String
+  modelName      String             @map("model_name")
+  status         AgentVersionStatus @default(DRAFT)
+  settings       Json               @default("{}")
+  contextWindow  Int?               @map("context_window")
+  evalBindingRef String?            @map("eval_binding_ref")
+  changeSummary  String             @map("change_summary")
+  createdById    String?            @map("created_by_id")
+  releasedAt     DateTime?          @map("released_at")
+  revokedAt      DateTime?          @map("revoked_at")
+  revocationReason String?          @map("revocation_reason")
+  revocationImpactScope Json        @default("{}") @map("revocation_impact_scope")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  createdBy      User?              @relation("ModelVersionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  agentRuns      AgentRun[]
+
+  @@unique([modelKey, versionNumber])
+  @@index([status, createdAt])
+  @@map("model_versions")
+}
+
+model RetrievalIndexVersion {
+  id              String             @id @default(cuid())
+  indexKey        String             @map("index_key")
+  versionNumber   Int                @map("version_number")
+  status          AgentVersionStatus @default(DRAFT)
+  sourceRefs      String[]           @default([]) @map("source_refs")
+  topKDefault     Int                @default(5) @map("top_k_default")
+  redactionPolicy Json               @default("{}") @map("redaction_policy")
+  evalBindingRef  String?            @map("eval_binding_ref")
+  changeSummary   String             @map("change_summary")
+  createdById     String?            @map("created_by_id")
+  releasedAt      DateTime?          @map("released_at")
+  revokedAt       DateTime?          @map("revoked_at")
+  revocationReason String?           @map("revocation_reason")
+  revocationImpactScope Json         @default("{}") @map("revocation_impact_scope")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+  createdBy       User?              @relation("RetrievalIndexCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  agentRuns       AgentRun[]
+
+  @@unique([indexKey, versionNumber])
+  @@index([status, createdAt])
+  @@map("retrieval_index_versions")
+}
+
+model ToolSchemaVersion {
+  id                  String             @id @default(cuid())
+  toolName            String             @map("tool_name")
+  schemaVersion       String             @map("schema_version")
+  status              AgentVersionStatus @default(DRAFT)
+  inputSchema         Json               @default("{}") @map("input_schema")
+  outputSchema        Json               @default("{}") @map("output_schema")
+  errorCodes          Json               @default("[]") @map("error_codes")
+  permissionLevel     String             @map("permission_level")
+  riskLevel           AuditRiskLevel     @map("risk_level")
+  actionScope         String[]           @default([]) @map("action_scope")
+  requiresApproval    Boolean            @default(false) @map("requires_approval")
+  approvalPolicy      Json               @default("{}") @map("approval_policy")
+  idempotencyRequired Boolean            @default(true) @map("idempotency_required")
+  timeoutMs           Int                @map("timeout_ms")
+  retryPolicy         Json               @default("{}") @map("retry_policy")
+  formalRunAllowed    Boolean            @default(false) @map("formal_run_allowed")
+  evalBindingRef      String?            @map("eval_binding_ref")
+  guardrailBindingRef String?            @map("guardrail_binding_ref")
+  traceFieldPolicy    Json               @default("{}") @map("trace_field_policy")
+  changeSummary       String             @map("change_summary")
+  createdById         String?            @map("created_by_id")
+  releasedAt          DateTime?          @map("released_at")
+  revokedAt           DateTime?          @map("revoked_at")
+  revocationReason    String?            @map("revocation_reason")
+  revocationImpactScope Json             @default("{}") @map("revocation_impact_scope")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+  createdBy           User?              @relation("ToolSchemaCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  agentRuns           AgentRun[]         @relation("AgentRunToolSchemaVersion")
+  toolInvocations     ToolInvocation[]   @relation("ToolInvocationSchemaVersion")
+
+  @@unique([toolName, schemaVersion])
+  @@index([status, formalRunAllowed])
+  @@index([riskLevel, requiresApproval])
+  @@map("tool_schema_versions")
+}
+
+model EvalCase {
+  id                  String          @id @default(cuid())
+  evalBindingRef      String          @map("eval_binding_ref")
+  caseKey             String          @map("case_key")
+  caseType            EvalCaseType    @map("case_type")
+  riskLevel           AuditRiskLevel  @default(R1) @map("risk_level")
+  requiredForRelease  Boolean         @default(true) @map("required_for_release")
+  inputFixture        Json            @default("{}") @map("input_fixture")
+  expectedOutput      Json            @default("{}") @map("expected_output")
+  sourceRefs          String[]        @default([]) @map("source_refs")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+  results             EvalRunResult[]
+
+  @@unique([evalBindingRef, caseKey])
+  @@index([evalBindingRef, requiredForRelease])
+  @@index([caseType, riskLevel])
+  @@map("eval_cases")
+}
+
+model EvalRun {
+  id               String          @id @default(cuid())
+  evalBindingRef   String          @map("eval_binding_ref")
+  targetType       String          @map("target_type")
+  targetRef        String          @map("target_ref")
+  status           EvalRunStatus   @default(PENDING)
+  totalCaseCount   Int             @default(0) @map("total_case_count")
+  passedCaseCount  Int             @default(0) @map("passed_case_count")
+  failedCaseCount  Int             @default(0) @map("failed_case_count")
+  blockedCaseCount Int             @default(0) @map("blocked_case_count")
+  resultSummary    Json            @default("{}") @map("result_summary")
+  runById          String?         @map("run_by_id")
+  startedAt        DateTime        @default(now()) @map("started_at")
+  completedAt      DateTime?       @map("completed_at")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  runBy            User?           @relation("EvalRunActor", fields: [runById], references: [id], onDelete: SetNull)
+  results          EvalRunResult[]
+
+  @@index([evalBindingRef, targetRef, status])
+  @@index([targetType, targetRef, createdAt])
+  @@index([status, createdAt])
+  @@map("eval_runs")
+}
+
+model EvalRunResult {
+  id             String           @id @default(cuid())
+  evalRunId      String           @map("eval_run_id")
+  evalCaseId     String           @map("eval_case_id")
+  status         EvalResultStatus
+  observedOutput Json             @default("{}") @map("observed_output")
+  failureReason  String?          @map("failure_reason")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  evalRun        EvalRun          @relation(fields: [evalRunId], references: [id], onDelete: Restrict)
+  evalCase       EvalCase         @relation(fields: [evalCaseId], references: [id], onDelete: Restrict)
+
+  @@unique([evalRunId, evalCaseId])
+  @@index([evalCaseId, status])
+  @@index([status, createdAt])
+  @@map("eval_run_results")
+}
+
+model AgentRun {
+  id                      String                 @id @default(cuid())
+  runId                   String                 @map("run_id")
+  clientId                String                 @map("client_id")
+  triggeredById           String?                @map("triggered_by_id")
+  triggerSource           String                 @map("trigger_source")
+  nodeType                AgentNodeType?         @map("node_type")
+  status                  AgentRunStatus         @default(PENDING)
+  promptVersionId         String                 @map("prompt_version_id")
+  modelVersionId          String                 @map("model_version_id")
+  retrievalIndexVersionId String?                @map("retrieval_index_version_id")
+  toolSchemaVersionId     String?                @map("tool_schema_version_id")
+  memorySnapshotRef       String?                @map("memory_snapshot_ref")
+  inputSummary            Json                   @default("{}") @map("input_summary")
+  outputSummary           Json                   @default("{}") @map("output_summary")
+  humanReviewStatus       String                 @default("NOT_REVIEWED") @map("human_review_status")
+  tokenCount              Int                    @default(0) @map("token_count")
+  costEstimateUsd         Decimal                @default(0) @db.Decimal(18, 6) @map("cost_estimate_usd")
+  durationMs              Int?                   @map("duration_ms")
+  errorCode               String?                @map("error_code")
+  errorMessage            String?                @map("error_message")
+  startedAt               DateTime?              @map("started_at")
+  completedAt             DateTime?              @map("completed_at")
+  createdAt               DateTime               @default(now()) @map("created_at")
+  updatedAt               DateTime               @updatedAt @map("updated_at")
+  payrollRun              PayrollRun             @relation(fields: [runId], references: [id], onDelete: Restrict)
+  client                  Client                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  triggeredBy             User?                  @relation("AgentRunTrigger", fields: [triggeredById], references: [id], onDelete: SetNull)
+  promptVersion           PromptVersion          @relation(fields: [promptVersionId], references: [id], onDelete: Restrict)
+  modelVersion            ModelVersion           @relation(fields: [modelVersionId], references: [id], onDelete: Restrict)
+  retrievalIndexVersion   RetrievalIndexVersion? @relation(fields: [retrievalIndexVersionId], references: [id], onDelete: Restrict)
+  toolSchemaVersion       ToolSchemaVersion?     @relation("AgentRunToolSchemaVersion", fields: [toolSchemaVersionId], references: [id], onDelete: Restrict)
+  steps                   AgentStep[]
+  toolInvocations         ToolInvocation[]
+  guardrailResults        GuardrailResult[]
+
+  @@index([runId, createdAt])
+  @@index([clientId, createdAt])
+  @@index([status, createdAt])
+  @@index([nodeType, status])
+  @@map("agent_runs")
+}
+
+model AgentStep {
+  id               String             @id @default(cuid())
+  agentRunId       String             @map("agent_run_id")
+  nodeType         AgentNodeType      @map("node_type")
+  sequence         Int
+  status           AgentStepStatus    @default(PENDING)
+  inputSummary     Json               @default("{}") @map("input_summary")
+  outputSummary    Json               @default("{}") @map("output_summary")
+  citedSourceRefs  String[]           @default([]) @map("cited_source_refs")
+  confidence       String?
+  riskLevel        AuditRiskLevel     @default(R1) @map("risk_level")
+  guardrailSummary Json               @default("{}") @map("guardrail_summary")
+  tokenCount       Int                @default(0) @map("token_count")
+  costEstimateUsd  Decimal            @default(0) @db.Decimal(18, 6) @map("cost_estimate_usd")
+  durationMs       Int?               @map("duration_ms")
+  errorCode        String?            @map("error_code")
+  errorMessage     String?            @map("error_message")
+  startedAt        DateTime?          @map("started_at")
+  completedAt      DateTime?          @map("completed_at")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  agentRun         AgentRun           @relation(fields: [agentRunId], references: [id], onDelete: Restrict)
+  toolInvocations  ToolInvocation[]
+  guardrailResults GuardrailResult[]
+
+  @@unique([agentRunId, sequence])
+  @@index([agentRunId, nodeType])
+  @@index([status, createdAt])
+  @@map("agent_steps")
+}
+
+model ToolInvocation {
+  id                  String               @id @default(cuid())
+  agentRunId          String               @map("agent_run_id")
+  agentStepId         String?              @map("agent_step_id")
+  schemaVersionId     String?              @map("schema_version_id")
+  toolName            String               @map("tool_name")
+  toolVersion         String               @map("tool_version")
+  status              ToolInvocationStatus @default(PENDING)
+  permissionLevel     String               @map("permission_level")
+  riskLevel           AuditRiskLevel       @default(R1) @map("risk_level")
+  requiresApproval    Boolean              @default(false) @map("requires_approval")
+  approvalStatus      String               @default("NOT_REQUIRED") @map("approval_status")
+  idempotencyKey      String?              @map("idempotency_key")
+  parameterSummary    Json                 @default("{}") @map("parameter_summary")
+  outputSummary       Json                 @default("{}") @map("output_summary")
+  errorCode           String?              @map("error_code")
+  errorMessage        String?              @map("error_message")
+  timeoutMs           Int                  @map("timeout_ms")
+  retryCount          Int                  @default(0) @map("retry_count")
+  formalRunAllowed    Boolean              @default(false) @map("formal_run_allowed")
+  startedAt           DateTime?            @map("started_at")
+  completedAt         DateTime?            @map("completed_at")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  agentRun            AgentRun             @relation(fields: [agentRunId], references: [id], onDelete: Restrict)
+  agentStep           AgentStep?           @relation(fields: [agentStepId], references: [id], onDelete: SetNull)
+  schemaVersion       ToolSchemaVersion?   @relation("ToolInvocationSchemaVersion", fields: [schemaVersionId], references: [id], onDelete: Restrict)
+  guardrailResults    GuardrailResult[]
+
+  @@index([agentRunId, createdAt])
+  @@index([agentStepId, createdAt])
+  @@index([toolName, toolVersion])
+  @@index([status, createdAt])
+  @@map("tool_invocations")
+}
+
+model GuardrailResult {
+  id               String             @id @default(cuid())
+  agentRunId       String             @map("agent_run_id")
+  agentStepId      String?            @map("agent_step_id")
+  toolInvocationId String?            @map("tool_invocation_id")
+  guardrailName    String             @map("guardrail_name")
+  guardrailType    String             @map("guardrail_type")
+  severity         GuardrailSeverity
+  action           GuardrailAction
+  triggered        Boolean            @default(false)
+  resultSummary    Json               @default("{}") @map("result_summary")
+  redactionApplied Boolean            @default(false) @map("redaction_applied")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  agentRun         AgentRun           @relation(fields: [agentRunId], references: [id], onDelete: Restrict)
+  agentStep        AgentStep?         @relation(fields: [agentStepId], references: [id], onDelete: SetNull)
+  toolInvocation   ToolInvocation?    @relation(fields: [toolInvocationId], references: [id], onDelete: SetNull)
+
+  @@index([agentRunId, createdAt])
+  @@index([agentStepId, createdAt])
+  @@index([toolInvocationId, createdAt])
+  @@index([guardrailName, triggered])
+  @@map("guardrail_results")
 }

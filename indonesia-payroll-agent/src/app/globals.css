@@ -159,6 +159,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .checkbox-line input { min-height: auto; }
 .status-pill.active { color: #15803d; background: #eaf5ee; }
 .status-pill.disabled, .status-pill.terminated { color: var(--warning); background: #fdf1e3; }
+.status-pill.deprecated { color: #475569; background: #eef1f4; }
+.status-pill.revoked { color: #ffffff; background: var(--danger); }
 .risk-badge.neutral, .risk-badge.r0 { color: var(--muted); background: #eef1f4; }
 .risk-badge.r1 { color: #1d4ed8; background: #e8eefc; border: 1px solid #c7d7f5; }
 .risk-badge.r2 { color: var(--warning); background: #fdf1e3; border: 1px solid #f0d8b6; }

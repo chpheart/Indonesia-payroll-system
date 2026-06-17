@@ -42,6 +42,7 @@ export const AUDIT_ACTIONS = [
   "FX_RATE_VERSION_CREATED",
   "FX_RATE_VERSION_CONFIRMED",
   "REGRESSION_RUN_RECORDED",
+  "AGENT_RUN_CREATED",
 ] as const;
 
 export const AUDIT_OBJECT_TYPES = [
@@ -63,6 +64,10 @@ export const AUDIT_OBJECT_TYPES = [
   "UPLOADED_FILE_VERSION",
   "WORKBOOK_PARSE",
   "CASE_ITEM",
+  "AGENT_RUN",
+  "AGENT_STEP",
+  "TOOL_INVOCATION",
+  "GUARDRAIL_RESULT",
 ] as const;
 
 export const AUDIT_RISK_LEVELS = ["R0", "R1", "R2", "R3", "R4"] as const;
