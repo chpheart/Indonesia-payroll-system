@@ -13,6 +13,10 @@ import {
   riskLevelForRunTransition,
 } from "@/domain/payroll-runs/run-transition-permissions";
 import { handleApi } from "@/app/api/_utils/errors";
+import {
+  buildRunPrecheckUpdate,
+  invalidateRunPrecheckUpdate,
+} from "@/app/(app)/payroll-runs/precheck-snapshot";
 import { statusUpdateData } from "@/app/(app)/payroll-runs/status-write";
 import { requestAuditFields } from "@/lib/audit/request-audit-fields";
 import { prisma } from "@/lib/db/prisma";
@@ -98,10 +102,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         run.clientId,
       );
       assertValidRunTransition(run.status, body.toStatus, run);
+      const precheckUpdate =
+        body.toStatus === "PENDING_CALCULATION"
+          ? await buildRunPrecheckUpdate({
+              clientId: run.clientId,
+              payrollMonth: run.payrollMonth,
+            })
+          : {};
       const [updated] = await prisma.$transaction([
         prisma.payrollRun.update({
           where: { id: run.id },
-          data: statusUpdateData(body.toStatus, body.reason),
+          data: {
+            ...statusUpdateData(body.toStatus, body.reason),
+            ...precheckUpdate,
+          },
         }),
         prisma.runStatusEvent.create({
           data: {
@@ -135,11 +149,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (targetStatus === run.status) {
       return NextResponse.json({ run, unchanged: true });
     }
+    const precheckInvalidation =
+      targetStatus === "PENDING_PRECHECK"
+        ? invalidateRunPrecheckUpdate(body.reason)
+        : {};
 
     const [updated] = await prisma.$transaction([
       prisma.payrollRun.update({
         where: { id: run.id },
-        data: statusUpdateData(targetStatus, body.reason),
+        data: {
+          ...statusUpdateData(targetStatus, body.reason),
+          ...precheckInvalidation,
+        },
       }),
       prisma.runStatusEvent.create({
         data: {

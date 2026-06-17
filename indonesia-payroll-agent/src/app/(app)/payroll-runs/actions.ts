@@ -16,6 +16,10 @@ import {
   targetStatusForRunImpact,
 } from "@/domain/payroll-runs/run-state-machine";
 import { currentRequestContext } from "@/app/(app)/server-actor";
+import {
+  buildRunPrecheckUpdate,
+  invalidateRunPrecheckUpdate,
+} from "@/app/(app)/payroll-runs/precheck-snapshot";
 import { statusUpdateData } from "@/app/(app)/payroll-runs/status-write";
 import { prisma } from "@/lib/db/prisma";
 
@@ -169,11 +173,21 @@ export async function transitionPayrollRunAction(formData: FormData) {
     run.clientId,
   );
   assertValidRunTransition(run.status, body.toStatus, run);
+  const precheckUpdate =
+    body.toStatus === "PENDING_CALCULATION"
+      ? await buildRunPrecheckUpdate({
+          clientId: run.clientId,
+          payrollMonth: run.payrollMonth,
+        })
+      : {};
 
   await prisma.$transaction([
     prisma.payrollRun.update({
       where: { id: run.id },
-      data: statusUpdateData(body.toStatus, body.reason),
+      data: {
+        ...statusUpdateData(body.toStatus, body.reason),
+        ...precheckUpdate,
+      },
     }),
     prisma.runStatusEvent.create({
       data: {
@@ -224,11 +238,18 @@ export async function impactRollbackPayrollRunAction(formData: FormData) {
   if (targetStatus === run.status) {
     return;
   }
+  const precheckInvalidation =
+    targetStatus === "PENDING_PRECHECK"
+      ? invalidateRunPrecheckUpdate(body.reason)
+      : {};
 
   await prisma.$transaction([
     prisma.payrollRun.update({
       where: { id: run.id },
-      data: statusUpdateData(targetStatus, body.reason),
+      data: {
+        ...statusUpdateData(targetStatus, body.reason),
+        ...precheckInvalidation,
+      },
     }),
     prisma.runStatusEvent.create({
       data: {

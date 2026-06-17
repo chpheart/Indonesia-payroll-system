@@ -237,6 +237,14 @@ enum AuditAction {
   FILE_PARSE_BLOCKED
   CASE_ITEM_CREATED
   CASE_ITEM_RESOLVED
+  PAYROLL_COMPONENT_CREATED
+  CLIENT_COMPONENT_ALIAS_VERSION_CREATED
+  RULE_VERSION_DRAFTED
+  RULE_VERSION_APPROVED
+  RULE_VERSION_DISABLED
+  FX_RATE_VERSION_CREATED
+  FX_RATE_VERSION_CONFIRMED
+  REGRESSION_RUN_RECORDED
 
   @@map("audit_action")
 }
@@ -250,6 +258,10 @@ enum AuditObjectType {
   PAYROLL_RUN
   EXPORT_FILE
   RULE_VERSION
+  PAYROLL_COMPONENT
+  CLIENT_COMPONENT_ALIAS
+  FX_RATE_VERSION
+  REGRESSION_RUN
   CORRECTION_RUN
   SENSITIVE_FIELD
   RAW_INPUT_ITEM
@@ -268,6 +280,95 @@ enum AuditRiskLevel {
   R4
 
   @@map("audit_risk_level")
+}
+
+enum PayrollComponentType {
+  EARNING
+  DEDUCTION
+  TAX_ALLOWANCE
+  BENEFIT
+  EMPLOYER_COST
+  MEMO
+
+  @@map("payroll_component_type")
+}
+
+enum PayrollComponentStatus {
+  ACTIVE
+  DISABLED
+
+  @@map("payroll_component_status")
+}
+
+enum ComponentAliasStatus {
+  DRAFT
+  EFFECTIVE
+  SUPERSEDED
+  DISABLED
+
+  @@map("component_alias_status")
+}
+
+enum RuleScopeType {
+  PUBLIC
+  CUSTOMER
+  COMPONENT
+
+  @@map("rule_scope_type")
+}
+
+enum RuleVersionType {
+  PPH21
+  BPJS
+  THR
+  GROSS_UP
+  FX
+  ROUNDING
+  CUSTOMER_POLICY
+  COMPONENT_CLASSIFICATION
+
+  @@map("rule_version_type")
+}
+
+enum RuleVersionStatus {
+  DRAFT
+  APPROVED
+  PUBLISHED
+  DISABLED
+  SUPERSEDED
+
+  @@map("rule_version_status")
+}
+
+enum RuleApprovalDecision {
+  APPROVED
+  REJECTED
+
+  @@map("rule_approval_decision")
+}
+
+enum FXRateVersionStatus {
+  DRAFT
+  CONFIRMED
+  SUPERSEDED
+
+  @@map("fx_rate_version_status")
+}
+
+enum RegressionDatasetCode {
+  BLUE_FOCUS
+  SANFU
+
+  @@map("regression_dataset_code")
+}
+
+enum RegressionRunStatus {
+  PASSED
+  WARNING
+  FAILED
+  BLOCKED
+
+  @@map("regression_run_status")
 }
 
 model User {
@@ -294,6 +395,16 @@ model User {
   fileReplacements   FileReplacement[]       @relation("FileReplacementActor")
   ownedCases         CaseItem[]              @relation("CaseItemOwner")
   resolvedCases      CaseItem[]              @relation("CaseItemResolver")
+  payrollComponents  PayrollComponent[]      @relation("PayrollComponentCreator")
+  componentAliases   ClientComponentAlias[]   @relation("ComponentAliasCreator")
+  confirmedAliases   ClientComponentAlias[]   @relation("ComponentAliasConfirmer")
+  draftedRules       RuleVersion[]           @relation("RuleVersionDrafter")
+  publishedRules     RuleVersion[]           @relation("RuleVersionPublisher")
+  disabledRules      RuleVersion[]           @relation("RuleVersionDisabler")
+  ruleApprovals      RuleApproval[]           @relation("RuleApprovalApprover")
+  fxRatesCreated     FXRateVersion[]         @relation("FXRateCreator")
+  fxRatesConfirmed   FXRateVersion[]         @relation("FXRateConfirmer")
+  regressionRuns     RegressionRun[]         @relation("RegressionRunActor")
 
   @@map("users")
 }
@@ -340,6 +451,9 @@ model Client {
   uploadedFileVersions UploadedFileVersion[]
   caseItems            CaseItem[]
   auditLogs            AuditLog[]
+  componentAliases     ClientComponentAlias[]
+  ruleVersions         RuleVersion[]
+  fxRateVersions       FXRateVersion[]
 
   @@map("clients")
 }
@@ -488,6 +602,9 @@ model PayrollRun {
   blockingIssueCount               Int                   @default(0) @map("blocking_issue_count")
   highRiskIssueCount               Int                   @default(0) @map("high_risk_issue_count")
   pendingCustomerConfirmationCount Int                   @default(0) @map("pending_customer_confirmation_count")
+  ruleVersionSnapshot              Json                  @default("[]") @map("rule_version_snapshot")
+  fxRateSnapshot                   Json                  @default("[]") @map("fx_rate_snapshot")
+  precheckSnapshot                 Json                  @default("{}") @map("precheck_snapshot")
   createdById                      String?               @map("created_by_id")
   lockedAt                         DateTime?             @map("locked_at")
   exportedAt                       DateTime?             @map("exported_at")
@@ -754,4 +871,154 @@ model CaseItem {
   @@index([rawInputItemId, status])
   @@index([fileVersionId, status])
   @@map("case_items")
+}
+
+model PayrollComponent {
+  id                  String                 @id @default(cuid())
+  code                String                 @unique
+  name                String
+  componentType       PayrollComponentType   @map("component_type")
+  taxableCash         Boolean                @default(false) @map("taxable_cash")
+  bpjsHealthBase      Boolean                @default(false) @map("bpjs_health_base")
+  bpjsEmploymentBase  Boolean                @default(false) @map("bpjs_employment_base")
+  paidOut             Boolean                @default(true) @map("paid_out")
+  affectsNetPay       Boolean                @default(true) @map("affects_net_pay")
+  affectsEmployerCost Boolean                @default(false) @map("affects_employer_cost")
+  status              PayrollComponentStatus @default(ACTIVE)
+  effectiveMonth      String?                @map("effective_month")
+  createdById         String?                @map("created_by_id")
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+  createdBy           User?                  @relation("PayrollComponentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  clientAliases       ClientComponentAlias[]
+  ruleVersions        RuleVersion[]
+
+  @@index([componentType, status])
+  @@map("payroll_components")
+}
+
+model ClientComponentAlias {
+  id              String               @id @default(cuid())
+  clientId        String               @map("client_id")
+  componentId     String               @map("component_id")
+  sourceLabel     String               @map("source_label")
+  normalizedLabel String               @map("normalized_label")
+  versionNumber   Int                  @map("version_number")
+  effectiveMonth  String               @map("effective_month")
+  status          ComponentAliasStatus @default(DRAFT)
+  evidenceRefs    String[]             @default([]) @map("evidence_refs")
+  changeReason    String               @map("change_reason")
+  createdById     String?              @map("created_by_id")
+  confirmedById   String?              @map("confirmed_by_id")
+  confirmedAt     DateTime?            @map("confirmed_at")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+  client          Client               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  component       PayrollComponent     @relation(fields: [componentId], references: [id], onDelete: Restrict)
+  createdBy       User?                @relation("ComponentAliasCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  confirmedBy     User?                @relation("ComponentAliasConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+
+  @@unique([clientId, normalizedLabel, versionNumber])
+  @@index([clientId, status])
+  @@index([componentId])
+  @@map("client_component_aliases")
+}
+
+model RuleVersion {
+  id                   String            @id @default(cuid())
+  ruleKey              String            @map("rule_key")
+  ruleType             RuleVersionType   @map("rule_type")
+  scopeType            RuleScopeType     @map("scope_type")
+  scopeKey             String            @map("scope_key")
+  clientId             String?           @map("client_id")
+  componentId          String?           @map("component_id")
+  versionNumber        Int               @map("version_number")
+  effectiveMonth       String            @map("effective_month")
+  status               RuleVersionStatus @default(DRAFT)
+  content              Json              @default("{}")
+  conflictCheckSummary Json              @default("{}") @map("conflict_check_summary")
+  changeSummary        String            @map("change_summary")
+  draftedById          String?           @map("drafted_by_id")
+  publishedById        String?           @map("published_by_id")
+  disabledById         String?           @map("disabled_by_id")
+  publishedAt          DateTime?         @map("published_at")
+  disabledAt           DateTime?         @map("disabled_at")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+  client               Client?           @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  component            PayrollComponent? @relation(fields: [componentId], references: [id], onDelete: Restrict)
+  draftedBy            User?             @relation("RuleVersionDrafter", fields: [draftedById], references: [id], onDelete: SetNull)
+  publishedBy          User?             @relation("RuleVersionPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  disabledBy           User?             @relation("RuleVersionDisabler", fields: [disabledById], references: [id], onDelete: SetNull)
+  approvals            RuleApproval[]
+  regressionRuns       RegressionRun[]
+
+  @@unique([ruleKey, scopeKey, versionNumber])
+  @@index([clientId, status])
+  @@index([ruleType, status])
+  @@index([scopeType, scopeKey, status])
+  @@map("rule_versions")
+}
+
+model RuleApproval {
+  id            String               @id @default(cuid())
+  ruleVersionId String               @map("rule_version_id")
+  decision      RuleApprovalDecision
+  approverId    String?              @map("approver_id")
+  note          String
+  createdAt     DateTime             @default(now()) @map("created_at")
+  ruleVersion   RuleVersion          @relation(fields: [ruleVersionId], references: [id], onDelete: Restrict)
+  approver      User?                @relation("RuleApprovalApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([ruleVersionId, createdAt])
+  @@index([approverId, createdAt])
+  @@map("rule_approvals")
+}
+
+model FXRateVersion {
+  id                String              @id @default(cuid())
+  clientId          String              @map("client_id")
+  payrollMonth      String              @map("payroll_month")
+  currencyCode      String              @map("currency_code")
+  versionNumber     Int                 @map("version_number")
+  rate              Decimal             @db.Decimal(18, 8)
+  employeeOverrides Json                @default("[]") @map("employee_overrides")
+  evidenceRefs      String[]            @default([]) @map("evidence_refs")
+  sourceLabel       String              @map("source_label")
+  changeReason      String              @map("change_reason")
+  status            FXRateVersionStatus @default(DRAFT)
+  createdById       String?             @map("created_by_id")
+  confirmedById     String?             @map("confirmed_by_id")
+  confirmedAt       DateTime?           @map("confirmed_at")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+  client            Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  createdBy         User?               @relation("FXRateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  confirmedBy       User?               @relation("FXRateConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+
+  @@unique([clientId, payrollMonth, currencyCode, versionNumber])
+  @@index([clientId, payrollMonth, status])
+  @@map("fx_rate_versions")
+}
+
+model RegressionRun {
+  id                    String                @id @default(cuid())
+  ruleVersionId         String                @map("rule_version_id")
+  datasetCode           RegressionDatasetCode @map("dataset_code")
+  scenarioName          String                @map("scenario_name")
+  status                RegressionRunStatus
+  expectedEmployeeCount Int?                  @map("expected_employee_count")
+  actualEmployeeCount   Int?                  @map("actual_employee_count")
+  maxDiffIdr            Decimal               @default(0) @db.Decimal(18, 2) @map("max_diff_idr")
+  warningThresholdIdr   Decimal               @default(1000) @db.Decimal(18, 2) @map("warning_threshold_idr")
+  blockingThresholdIdr  Decimal               @default(10000) @db.Decimal(18, 2) @map("blocking_threshold_idr")
+  resultSummary         Json                  @default("{}") @map("result_summary")
+  runById               String?               @map("run_by_id")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  ruleVersion           RuleVersion           @relation(fields: [ruleVersionId], references: [id], onDelete: Restrict)
+  runBy                 User?                 @relation("RegressionRunActor", fields: [runById], references: [id], onDelete: SetNull)
+
+  @@unique([ruleVersionId, datasetCode, scenarioName])
+  @@index([ruleVersionId, status])
+  @@map("regression_runs")
 }

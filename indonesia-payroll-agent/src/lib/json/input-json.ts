@@ -6,7 +6,11 @@ export function toInputJsonObject(value: Record<string, unknown>): Prisma.InputJ
   ) as Prisma.InputJsonObject;
 }
 
-function toInputJsonValue(value: unknown): Prisma.InputJsonValue | null {
+export function toInputJsonArray(value: unknown[]): Prisma.InputJsonArray {
+  return value.map((item) => toInputJsonValue(item));
+}
+
+export function toInputJsonValue(value: unknown): Prisma.InputJsonValue | null {
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return value;
   }
