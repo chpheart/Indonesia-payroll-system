@@ -5,7 +5,8 @@ import {
   approveChangeProposalAction,
   closeChangeProposalAction,
 } from "@/app/(app)/payroll-runs/[runId]/phase8-actions";
-import { assertClientActionAllowed } from "@/domain/auth/permissions";
+import { assertClientActionAllowed, canPerformClientAction } from "@/domain/auth/permissions";
+import { ApprovalDrawer } from "@/components/approval-drawer";
 import { ChangeProposalRow } from "@/components/change-proposal-row";
 import { prisma } from "@/lib/db/prisma";
 
@@ -59,6 +60,14 @@ export default async function ChangeReviewPage({ params }: PageProps) {
   assertClientActionAllowed(actor, "viewClient", run.clientId);
 
   const pendingCount = run.changeProposals.filter((proposal) => proposal.status === "PENDING_REVIEW").length;
+  const canReview = canPerformClientAction(actor, "updatePayrollRun", run.clientId);
+  const permissionGate = canReview
+    ? `payrollRun.update 已授权（${actor.roleCodes.join(", ")}）`
+    : `payrollRun.update 未授权（${actor.roleCodes.join(", ")}）`;
+  const customerConfirmationGate =
+    run.pendingCustomerConfirmationCount === 0
+      ? "当前无缺口"
+      : `${run.pendingCustomerConfirmationCount} 个待客户确认缺口`;
 
   return (
     <div className="page-stack">
@@ -76,6 +85,18 @@ export default async function ChangeReviewPage({ params }: PageProps) {
           {pendingCount} 待审核
         </span>
       </header>
+
+      <ApprovalDrawer
+        title="ChangeProposal 采纳前确认"
+        riskLabel={pendingCount > 0 ? "R2/R3 review gate" : "R0 clear"}
+        requiredRole="具备 payrollRun.update 且授权当前客户"
+        impactItems={[
+          `${pendingCount} 条待审核 proposal`,
+          `${run.pendingCustomerConfirmationCount} 个客户确认缺口`,
+          "采纳后追加 ChangeLedgerEntry，原 proposal 不再可重复采纳",
+        ]}
+        reason="采纳、修改后采纳、转追问、合并和拆分都会写入审计；锁定 run 必须走 correction run。"
+      />
 
       <section className="content-section">
         <div className="section-header">
@@ -100,10 +121,10 @@ export default async function ChangeReviewPage({ params }: PageProps) {
               {run.changeProposals.map((proposal) => (
                 <ChangeProposalRow
                   key={proposal.id}
-                  proposal={proposal}
+                  proposal={{ ...proposal, permissionGate, customerConfirmationGate }}
                   statusLabel={STATUS_LABELS[proposal.status] ?? proposal.status}
                   actions={
-                    proposal.status === "PENDING_REVIEW" ? (
+                    proposal.status === "PENDING_REVIEW" && canReview ? (
                       <div className="action-stack">
                         <form action={approveChangeProposalAction}>
                           <input type="hidden" name="runId" value={run.id} />
@@ -115,21 +136,31 @@ export default async function ChangeReviewPage({ params }: PageProps) {
                             <option value="CONFLICT">CONFLICT</option>
                           </select>
                           <input name="evidenceRefs" placeholder="证据 refs，逗号分隔" defaultValue={proposal.evidenceRefs.join(", ")} />
+                          <input name="proposedValue" placeholder='修改后采纳值 JSON，如 {"amount":12000000}' />
+                          <input name="formalObjectType" placeholder="正式对象类型，默认取目标对象" />
+                          <input name="formalObjectId" placeholder="正式对象 ID，可留空" />
+                          <input name="formalObjectVersionRef" placeholder="正式对象版本引用，可留空" />
                           <input name="reviewNote" placeholder="采纳理由" required />
                           <button type="submit">采纳入账</button>
                         </form>
                         <form action={closeChangeProposalAction}>
                           <input type="hidden" name="runId" value={run.id} />
                           <input type="hidden" name="proposalId" value={proposal.id} />
-                          <select name="action" defaultValue="REJECTED">
-                            <option value="REJECTED">拒绝</option>
-                            <option value="RETURNED">退回</option>
-                            <option value="NO_ACTION">无需处理</option>
+                          <select name="action" defaultValue="reject">
+                            <option value="reject">拒绝</option>
+                            <option value="return">退回</option>
+                            <option value="noAction">无需处理</option>
+                            <option value="convertToQuestion">转追问</option>
+                            <option value="merge">合并</option>
+                            <option value="split">拆分</option>
                           </select>
+                          <input name="relatedProposalIds" placeholder="合并/拆分关联 proposal IDs，逗号分隔" />
                           <input name="reviewNote" placeholder="处理理由" required />
                           <button type="submit">关闭候选</button>
                         </form>
                       </div>
+                    ) : proposal.status === "PENDING_REVIEW" ? (
+                      <span>{permissionGate}</span>
                     ) : (
                       <span>{proposal.reviewNote ?? proposal.ledgerEntry?.id ?? "已处理"}</span>
                     )

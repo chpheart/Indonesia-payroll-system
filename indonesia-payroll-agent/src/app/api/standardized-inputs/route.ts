@@ -5,8 +5,10 @@ import { actorFromHeadersWithDatabase } from "@/domain/auth/request-context";
 import { assertClientActionAllowed, isSystemAdmin } from "@/domain/auth/permissions";
 import {
   EVIDENCE_STATUSES,
-  isCriticalStandardField,
-} from "@/domain/standardization/standardization-service";
+  REVIEWABLE_STANDARDIZED_INPUT_STATUSES,
+  assertReviewableStandardizedInputStatus,
+  validateStandardizedInputReferences,
+} from "@/domain/standardization/standardization-policy";
 import { requestAuditFields } from "@/lib/audit/request-audit-fields";
 import { prisma } from "@/lib/db/prisma";
 import { toInputJsonArray, toInputJsonObject, toInputJsonValue } from "@/lib/json/input-json";
@@ -95,16 +97,18 @@ export async function POST(request: NextRequest) {
     const auditFields = await requestAuditFields(actor, request.headers);
     const body = postSchema.parse(await request.json());
 
-    if (body.action === "createPreview") {
-      const run = await requireWritableRun(body.runId, body.clientId);
-      assertClientActionAllowed(actor, "updatePayrollRun", run.clientId);
-      const issues = await validateStandardizedInput({
-        fieldMappingVersionId: body.fieldMappingVersionId,
-        employeeMatchCandidateId: body.employeeMatchCandidateId,
-        standardField: body.standardField,
-        evidenceRefs: body.evidenceRefs,
-        evidenceStatus: body.evidenceStatus,
-      });
+	    if (body.action === "createPreview") {
+	      const run = await requireWritableRun(body.runId, body.clientId);
+	      assertClientActionAllowed(actor, "updatePayrollRun", run.clientId);
+	      const issues = await validateStandardizedInput({
+	        clientId: body.clientId,
+	        runId: body.runId,
+	        fieldMappingVersionId: body.fieldMappingVersionId,
+	        employeeMatchCandidateId: body.employeeMatchCandidateId,
+	        standardField: body.standardField,
+	        evidenceRefs: body.evidenceRefs,
+	        evidenceStatus: body.evidenceStatus,
+	      });
       const status = issues.some((issue) => issue.severity === "BLOCKING") ? "BLOCKED" : "PREVIEW";
       const created = await prisma.$transaction(async (tx) => {
         const input = await tx.standardizedPayrollInput.create({
@@ -161,12 +165,15 @@ export async function POST(request: NextRequest) {
     }
     await assertWritableRun(current.payrollRun);
     assertClientActionAllowed(actor, "updatePayrollRun", current.clientId);
+    assertReviewableStandardizedInputStatus(current.status);
     if (current.optimisticLockVersion !== body.expectedLockVersion) {
       throw new Error("STANDARDIZED_INPUT_STALE_VERSION");
     }
     const evidenceRefs = body.evidenceRefs ?? current.evidenceRefs;
     const evidenceStatus = evidenceRefs.length > 0 ? "VALID" : current.evidenceStatus;
     const issues = await validateStandardizedInput({
+      clientId: current.clientId,
+      runId: current.runId,
       fieldMappingVersionId: current.fieldMappingVersionId ?? undefined,
       employeeMatchCandidateId: current.employeeMatchCandidateId ?? undefined,
       standardField: current.standardField,
@@ -177,12 +184,16 @@ export async function POST(request: NextRequest) {
       throw new Error("STANDARDIZED_INPUT_BLOCKING_ISSUES");
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const input = await tx.standardizedPayrollInput.update({
-        where: { id: current.id },
-        data: {
-          status: "CONFIRMED",
-          evidenceStatus,
+	    const updated = await prisma.$transaction(async (tx) => {
+	      const updateResult = await tx.standardizedPayrollInput.updateMany({
+	        where: {
+	          id: current.id,
+	          optimisticLockVersion: body.expectedLockVersion,
+	          status: { in: [...REVIEWABLE_STANDARDIZED_INPUT_STATUSES] },
+	        },
+	        data: {
+	          status: "CONFIRMED",
+	          evidenceStatus,
           evidenceRefs,
           value: body.value ? toInputJsonObject(body.value) : toInputJsonValue(current.value) ?? {},
           amount: body.amount ?? current.amount,
@@ -190,11 +201,18 @@ export async function POST(request: NextRequest) {
           optimisticLockVersion: current.optimisticLockVersion + 1,
           modifiedById: auditFields.actorUserId,
           confirmedById: auditFields.actorUserId,
-          confirmedAt: new Date(),
-        },
-      });
-      await tx.auditLog.create({
-        data: {
+	          confirmedAt: new Date(),
+	        },
+	      });
+	      if (updateResult.count !== 1) {
+	        throw new Error("STANDARDIZED_INPUT_STALE_VERSION");
+	      }
+	      const input = await tx.standardizedPayrollInput.findUnique({ where: { id: current.id } });
+	      if (!input) {
+	        throw new Error("STANDARDIZED_INPUT_NOT_FOUND");
+	      }
+	      await tx.auditLog.create({
+	        data: {
           action: "STANDARDIZED_INPUT_CONFIRMED",
           objectType: "STANDARDIZED_PAYROLL_INPUT",
           objectId: input.id,
@@ -216,46 +234,27 @@ export async function POST(request: NextRequest) {
 }
 
 async function validateStandardizedInput(input: {
+  clientId: string;
+  runId: string;
   fieldMappingVersionId?: string;
   employeeMatchCandidateId?: string;
   standardField: string;
   evidenceRefs: string[];
   evidenceStatus: "VALID" | "MISSING" | "STALE";
 }) {
-  const issues: Array<{ code: string; severity: "INFO" | "WARNING" | "BLOCKING"; message: string }> = [];
-  if (input.fieldMappingVersionId) {
-    const mapping = await prisma.fieldMappingVersion.findUnique({ where: { id: input.fieldMappingVersionId } });
-    if (!mapping || mapping.status !== "CONFIRMED" || ["LOW", "CONFLICT"].includes(mapping.confidence)) {
-      issues.push({
-        code: "FIELD_MAPPING_NOT_CONFIRMED",
-        severity: "BLOCKING",
-        message: "标准化输入只能来自已人工确认且非低置信/冲突的映射版本。",
-      });
-    }
-  }
-  if (input.employeeMatchCandidateId) {
-    const match = await prisma.employeeMatchCandidate.findUnique({
-      where: { id: input.employeeMatchCandidateId },
-    });
-    if (!match || match.status !== "CONFIRMED" || !match.employeeId) {
-      issues.push({
-        code: "EMPLOYEE_MATCH_NOT_CONFIRMED",
-        severity: "BLOCKING",
-        message: "员工匹配未确认，不能进入正式标准化输入。",
-      });
-    }
-  }
-  if (isCriticalStandardField(input.standardField) && input.evidenceRefs.length === 0) {
-    issues.push({
-      code: "CRITICAL_FIELD_EVIDENCE_MISSING",
-      severity: "BLOCKING",
-      message: "关键算薪字段缺证据，不能保存为生效版本。",
-    });
-  }
-  if (input.evidenceStatus !== "VALID") {
-    issues.push({ code: "EVIDENCE_NOT_VALID", severity: "WARNING", message: "证据状态未验证。" });
-  }
-  return issues;
+  const [mapping, match] = await Promise.all([
+    input.fieldMappingVersionId
+      ? prisma.fieldMappingVersion.findUnique({ where: { id: input.fieldMappingVersionId } })
+      : null,
+    input.employeeMatchCandidateId
+      ? prisma.employeeMatchCandidate.findUnique({ where: { id: input.employeeMatchCandidateId } })
+      : null,
+  ]);
+  return validateStandardizedInputReferences({
+    ...input,
+    fieldMappingVersion: mapping,
+    employeeMatchCandidate: match,
+  });
 }
 
 async function requireWritableRun(runId: string, expectedClientId: string) {

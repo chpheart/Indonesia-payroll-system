@@ -39,6 +39,7 @@ async function cleanupPhase8E2eData() {
     [PROPOSAL_ID, LEDGER_PROPOSAL_ID],
     RUN_ID,
   ]);
+  await db.query("DELETE FROM case_items WHERE raw_input_item_id = $1 OR run_id = $2", [RAW_ID, RUN_ID]);
   await db.query("DELETE FROM raw_input_items WHERE id = $1 OR run_id = $2", [RAW_ID, RUN_ID]);
   await db.query("DELETE FROM audit_logs WHERE client_id = $1 OR run_id = $2 OR actor_user_id = $3", [
     CLIENT_ID,
@@ -129,14 +130,14 @@ async function seedPhase8E2eData() {
       'bpjsHealthNumber', 'LOW'::confidence_band, '表头疑似 BPJS，需人工确认', now())`,
     [MAPPING_CANDIDATE_ID, CLIENT_ID, RUN_ID],
   );
-  await db.query(
-    `INSERT INTO field_mapping_versions
-     (id, client_id, run_id, candidate_id, version_number, source, source_sheet_name, source_column_label,
-      target_field, confidence, rationale, confirmed_by_id, updated_at)
-     VALUES ($1, $2, $3, $4, 1, 'MANUAL'::field_mapping_source, '门店工资', 'Gross',
-      'grossSalaryAmount', 'HIGH'::confidence_band, '人工确认 gross salary', $5, now())`,
-    [MAPPING_VERSION_ID, CLIENT_ID, RUN_ID, MAPPING_CANDIDATE_ID, USER_ID],
-  );
+	  await db.query(
+	    `INSERT INTO field_mapping_versions
+	     (id, client_id, run_id, version_number, source, source_sheet_name, source_column_label,
+	      target_field, confidence, rationale, confirmed_by_id, updated_at)
+	     VALUES ($1, $2, $3, 1, 'MANUAL'::field_mapping_source, '门店工资', 'Gross',
+	      'grossSalaryAmount', 'HIGH'::confidence_band, '人工确认 gross salary', $4, now())`,
+	    [MAPPING_VERSION_ID, CLIENT_ID, RUN_ID, USER_ID],
+	  );
   await db.query(
     `INSERT INTO employee_match_candidates
      (id, client_id, run_id, employee_id, full_name_raw, match_method, confidence, status, reason, updated_at)
@@ -177,18 +178,29 @@ test.use({ viewport: { width: 1440, height: 900 } });
 test("shows Phase 8 change and mapping workbenches at desktop width", async ({ page }) => {
   test.skip(!seeded, `database seed unavailable: ${seedError}`);
 
-  await page.setExtraHTTPHeaders({ "x-user-id": USER_ID });
-  await page.goto(`/payroll-runs/${RUN_ID}/changes`);
-  await expect(page.getByRole("heading", { name: "变更 Proposal Review" })).toBeVisible();
-  await expect(page.getByText("ChangeProposal 候选队列")).toBeVisible();
-  await expect(page.getByText("ChangeLedgerEntry 正式账本")).toBeVisible();
-  await expect(page.getByText("客户确认 Ayu 本月调薪").first()).toBeVisible();
+	  await page.setExtraHTTPHeaders({ "x-user-id": USER_ID });
+	  await page.goto(`/payroll-runs/${RUN_ID}/changes`);
+	  await expect(page.getByRole("heading", { name: "变更 Proposal Review" })).toBeVisible();
+	  await expect(page.getByText("ChangeProposal 候选队列")).toBeVisible();
+	  await expect(page.getByText("ChangeLedgerEntry 正式账本")).toBeVisible();
+	  await expect(page.getByText("客户确认 Ayu 本月调薪").first()).toBeVisible();
+	  await expect(page.getByText("权限：payrollRun.update 已授权").first()).toBeVisible();
+	  await expect(page.getByText("客户确认：当前无缺口").first()).toBeVisible();
+	  await page.getByPlaceholder("采纳理由").fill("e2e approval");
+	  await page.getByRole("button", { name: "采纳入账" }).click();
+	  await expect(page.getByText("已采纳").first()).toBeVisible();
 
-  await page.goto(`/payroll-runs/${RUN_ID}/mappings`);
-  await expect(page.getByRole("heading", { name: "字段映射与标准化确认" })).toBeVisible();
-  await expect(page.getByText("字段映射候选")).toBeVisible();
-  await expect(page.getByText("FieldMappingVersion")).toBeVisible();
-  await expect(page.getByText("标准化数据预览")).toBeVisible();
-  await expect(page.getByText("BPJS", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("grossSalaryAmount").first()).toBeVisible();
-});
+	  await page.goto(`/payroll-runs/${RUN_ID}/mappings`);
+	  await expect(page.getByRole("heading", { name: "字段映射与标准化确认" })).toBeVisible();
+	  await expect(page.getByText("字段映射候选")).toBeVisible();
+	  await expect(page.getByText("FieldMappingVersion")).toBeVisible();
+	  await expect(page.getByText("标准化数据预览")).toBeVisible();
+	  await expect(page.getByText("BPJS", { exact: true }).first()).toBeVisible();
+	  await expect(page.getByText("grossSalaryAmount").first()).toBeVisible();
+
+	  await page.getByRole("button", { name: "确认映射版本" }).click();
+	  await expect(page.getByText("CONFIRMED").first()).toBeVisible();
+
+	  await page.getByRole("button", { name: "确认标准化数据" }).click();
+	  await expect(page.getByText("CONFIRMED").last()).toBeVisible();
+	});

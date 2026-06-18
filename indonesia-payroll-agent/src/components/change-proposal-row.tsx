@@ -20,6 +20,8 @@ export type ChangeProposalRowData = {
   rawInputItem?: { redactedSummary: string } | null;
   targetEmployee?: { employeeCode: string; fullName: string } | null;
   ledgerEntry?: { id: string } | null;
+  permissionGate: string;
+  customerConfirmationGate: string;
 };
 
 export function ChangeProposalRow({
@@ -57,6 +59,8 @@ export function ChangeProposalRow({
       <td>
         <span className={`risk-badge ${proposal.riskLevel.toLowerCase()}`}>{proposal.riskLevel}</span>
         <span className="status-pill">{proposal.confidence}</span>
+        <span className="stacked-text">权限：{proposal.permissionGate}</span>
+        <span className="stacked-text">客户确认：{proposal.customerConfirmationGate}</span>
         <div className="evidence-strip">
           {proposal.evidenceRefs.length > 0 ? (
             proposal.evidenceRefs.slice(0, 3).map((ref) => <EvidenceChip key={ref} label={ref} />)

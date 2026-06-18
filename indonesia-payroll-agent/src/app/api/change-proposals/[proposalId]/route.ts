@@ -7,6 +7,13 @@ import {
   assertProposalCanBeApproved,
   CONFIDENCE_BANDS,
 } from "@/domain/changes/change-review-policy";
+import {
+  assertRelatedProposalScope,
+  CLOSE_CHANGE_PROPOSAL_ACTIONS,
+  CLOSE_CHANGE_PROPOSAL_STATUS,
+  closeActionRequiresRelatedProposalLookup,
+  formalObjectReferenceForProposal,
+} from "@/domain/changes/change-review-workflow";
 import { requestAuditFields } from "@/lib/audit/request-audit-fields";
 import { prisma } from "@/lib/db/prisma";
 import { toInputJsonObject, toInputJsonValue } from "@/lib/json/input-json";
@@ -29,8 +36,9 @@ const approveSchema = z.object({
 });
 
 const closeSchema = z.object({
-  action: z.enum(["reject", "return", "noAction", "convertToQuestion"]),
+  action: z.enum(CLOSE_CHANGE_PROPOSAL_ACTIONS),
   reviewNote: z.string().min(1).max(1000),
+  relatedProposalIds: z.array(z.string().min(1)).optional(),
 });
 
 const patchSchema = z.discriminatedUnion("action", [approveSchema, closeSchema]);
@@ -81,22 +89,71 @@ export async function PATCH(request: NextRequest, { params }: RouteProps) {
     assertClientActionAllowed(actor, "updatePayrollRun", proposal.clientId);
 
     if (body.action !== "approve") {
-      const statusMap = {
-        reject: "REJECTED",
-        return: "RETURNED",
-        noAction: "NO_ACTION",
-        convertToQuestion: "CONVERTED_TO_QUESTION",
-      } as const;
+      const relatedProposalIds = body.relatedProposalIds ?? [];
+      const relatedProposals = closeActionRequiresRelatedProposalLookup(body.action)
+        ? await prisma.changeProposal.findMany({
+            where: { id: { in: relatedProposalIds } },
+            select: { id: true, clientId: true, runId: true },
+          })
+        : [];
+      assertRelatedProposalScope({
+        action: body.action,
+        proposalId: proposal.id,
+        clientId: proposal.clientId,
+        runId: proposal.runId,
+        relatedProposalIds,
+        relatedProposals,
+      });
       const updated = await prisma.$transaction(async (tx) => {
-        const closed = await tx.changeProposal.update({
-          where: { id: proposal.id },
+        const closedAt = new Date();
+        const closeResult = await tx.changeProposal.updateMany({
+          where: { id: proposal.id, status: "PENDING_REVIEW" },
           data: {
-            status: statusMap[body.action],
+            status: CLOSE_CHANGE_PROPOSAL_STATUS[body.action],
             reviewedById: auditFields.actorUserId,
-            reviewedAt: new Date(),
+            reviewedAt: closedAt,
             reviewNote: body.reviewNote,
+            relatedProposalIds,
           },
         });
+        if (closeResult.count !== 1) {
+          throw new Error("CHANGE_PROPOSAL_ALREADY_REVIEWED");
+        }
+        const caseItem =
+          body.action === "convertToQuestion"
+            ? await tx.caseItem.create({
+                data: {
+                  clientId: proposal.clientId,
+                  runId: proposal.runId,
+                  rawInputItemId: proposal.rawInputItemId,
+                  type: "MISSING_INFORMATION",
+                  riskLevel: proposal.riskLevel,
+                  title: "ChangeProposal 转追问",
+                  detail: body.reviewNote,
+                  metadata: toInputJsonObject({
+                    proposalId: proposal.id,
+                    targetField: proposal.targetField,
+                    source: "CHANGE_PROPOSAL_REVIEW",
+                  }),
+                },
+              })
+            : null;
+        if (body.action === "convertToQuestion" && proposal.rawInputItemId) {
+          await tx.rawInputItem.updateMany({
+            where: { id: proposal.rawInputItemId },
+            data: { status: "NEEDS_QUESTION" },
+          });
+        }
+        if (body.action === "convertToQuestion") {
+          await tx.payrollRun.update({
+            where: { id: proposal.runId },
+            data: { blockingIssueCount: { increment: 1 } },
+          });
+        }
+        const closed = await tx.changeProposal.findUnique({ where: { id: proposal.id } });
+        if (!closed) {
+          throw new Error("CHANGE_PROPOSAL_NOT_FOUND");
+        }
         await tx.auditLog.create({
           data: {
             action: "CHANGE_PROPOSAL_REVIEWED",
@@ -106,7 +163,13 @@ export async function PATCH(request: NextRequest, { params }: RouteProps) {
             ...auditFields,
             clientId: proposal.clientId,
             runId: proposal.runId,
-            metadata: { status: closed.status, reviewNote: body.reviewNote },
+            metadata: {
+              action: body.action,
+              status: closed.status,
+              reviewNote: body.reviewNote,
+              relatedProposalIds,
+              caseItemId: caseItem?.id,
+            },
           },
         });
         return closed;
@@ -128,8 +191,8 @@ export async function PATCH(request: NextRequest, { params }: RouteProps) {
 
     const result = await prisma.$transaction(async (tx) => {
       const reviewedAt = new Date();
-      const updated = await tx.changeProposal.update({
-        where: { id: proposal.id },
+      const updateResult = await tx.changeProposal.updateMany({
+        where: { id: proposal.id, status: "PENDING_REVIEW" },
         data: {
           status:
             body.proposedValue || body.evidenceRefs || body.confidence
@@ -143,6 +206,14 @@ export async function PATCH(request: NextRequest, { params }: RouteProps) {
           confidence: nextConfidence,
         },
       });
+      if (updateResult.count !== 1) {
+        throw new Error("CHANGE_PROPOSAL_ALREADY_REVIEWED");
+      }
+      const updated = await tx.changeProposal.findUnique({ where: { id: proposal.id } });
+      if (!updated) {
+        throw new Error("CHANGE_PROPOSAL_NOT_FOUND");
+      }
+      const formalObjectRef = formalObjectReferenceForProposal(proposal, body);
       const ledgerEntry = await tx.changeLedgerEntry.create({
         data: {
           proposalId: proposal.id,
@@ -160,9 +231,9 @@ export async function PATCH(request: NextRequest, { params }: RouteProps) {
           effectiveTo: proposal.effectiveTo,
           riskLevel: proposal.riskLevel,
           evidenceRefs: nextEvidenceRefs,
-          formalObjectType: body.formalObjectType,
-          formalObjectId: body.formalObjectId,
-          formalObjectVersionRef: body.formalObjectVersionRef,
+          formalObjectType: formalObjectRef.formalObjectType,
+          formalObjectId: formalObjectRef.formalObjectId,
+          formalObjectVersionRef: formalObjectRef.formalObjectVersionRef,
           reviewNote: body.reviewNote,
           reviewedAt,
         },

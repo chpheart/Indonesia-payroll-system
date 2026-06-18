@@ -2,12 +2,15 @@ import { randomUUID } from "node:crypto";
 import { type AuditService } from "@/domain/audit/audit-service";
 import { type ActorContext, assertClientActionAllowed } from "@/domain/auth/permissions";
 import { type PayrollRunStatus } from "@/domain/payroll-runs/run-state-machine";
-
-export const STANDARDIZED_INPUT_STATUSES = ["PREVIEW", "CONFIRMED", "BLOCKED", "INVALIDATED"] as const;
-export const EVIDENCE_STATUSES = ["VALID", "MISSING", "STALE"] as const;
-
-export type StandardizedInputStatus = (typeof STANDARDIZED_INPUT_STATUSES)[number];
-export type EvidenceStatus = (typeof EVIDENCE_STATUSES)[number];
+import {
+  REVIEWABLE_STANDARDIZED_INPUT_STATUSES,
+  assertReviewableStandardizedInputStatus,
+  isCriticalStandardField,
+  type EvidenceStatus,
+  type StandardizationIssue,
+  type StandardizedInputStatus,
+  validateStandardizedInputReferences,
+} from "@/domain/standardization/standardization-policy";
 
 export type StandardizedPayrollInputRecord = {
   id: string;
@@ -43,12 +46,6 @@ export type StandardizedPayrollInputRecord = {
   updatedAt: Date;
 };
 
-export type StandardizationIssue = {
-  code: string;
-  severity: "INFO" | "WARNING" | "BLOCKING";
-  message: string;
-};
-
 export type StandardizationStore = {
   findRunById(id: string): Promise<{
     id: string;
@@ -65,10 +62,12 @@ export type StandardizationStore = {
   } | null>;
   findEmployeeMatchCandidateById(id: string): Promise<{
     id: string;
+    clientId: string;
+    runId: string;
     employeeId?: string | null;
     status: "CANDIDATE" | "CONFIRMED" | "REJECTED" | "BLOCKED";
     confidence: "LOW" | "MEDIUM" | "HIGH" | "CONFLICT";
-  } | null>;
+	  } | null>;
   createInput(input: StandardizedPayrollInputRecord): Promise<StandardizedPayrollInputRecord>;
   findInputById(id: string): Promise<StandardizedPayrollInputRecord | null>;
   updateInput(input: {
@@ -78,12 +77,14 @@ export type StandardizationStore = {
     evidenceRefs?: string[];
     value?: Record<string, unknown>;
     amount?: string | number | null;
-    validationIssues?: StandardizationIssue[];
-    optimisticLockVersion: number;
+	    validationIssues?: StandardizationIssue[];
+	    expectedLockVersion: number;
+	    reviewableStatuses: readonly StandardizedInputStatus[];
+	    optimisticLockVersion: number;
     modifiedById?: string;
     confirmedById?: string;
     confirmedAt?: Date;
-  }): Promise<StandardizedPayrollInputRecord>;
+	  }): Promise<StandardizedPayrollInputRecord | null>;
 };
 
 const HISTORY_STATUSES = new Set<PayrollRunStatus>([
@@ -167,6 +168,11 @@ export class StandardizationService {
     const current = await this.requireInput(input.inputId);
     const run = await this.requireWritableRun(current.runId);
     assertClientActionAllowed(input.actor, "updatePayrollRun", run.clientId);
+    try {
+      assertReviewableStandardizedInputStatus(current.status);
+    } catch {
+      throw new StandardizationServiceError("STANDARDIZED_INPUT_NOT_REVIEWABLE");
+    }
     if (current.optimisticLockVersion !== input.expectedLockVersion) {
       throw new StandardizationServiceError("STANDARDIZED_INPUT_STALE_VERSION");
     }
@@ -186,19 +192,24 @@ export class StandardizationService {
       throw new StandardizationServiceError("CRITICAL_STANDARDIZED_INPUT_EVIDENCE_REQUIRED");
     }
 
-    const updated = await this.store.updateInput({
-      id: current.id,
-      status: "CONFIRMED",
+	    const updated = await this.store.updateInput({
+	      id: current.id,
+	      status: "CONFIRMED",
       evidenceStatus: nextEvidenceStatus,
       evidenceRefs: nextEvidenceRefs,
       value: input.value ?? current.value,
-      amount: input.amount ?? current.amount,
-      validationIssues: nextIssues,
-      optimisticLockVersion: current.optimisticLockVersion + 1,
+	      amount: input.amount ?? current.amount,
+	      validationIssues: nextIssues,
+	      expectedLockVersion: input.expectedLockVersion,
+	      reviewableStatuses: REVIEWABLE_STANDARDIZED_INPUT_STATUSES,
+	      optimisticLockVersion: current.optimisticLockVersion + 1,
       modifiedById: input.actor.id,
-      confirmedById: input.actor.id,
-      confirmedAt: new Date(),
-    });
+	      confirmedById: input.actor.id,
+	      confirmedAt: new Date(),
+	    });
+	    if (!updated) {
+	      throw new StandardizationServiceError("STANDARDIZED_INPUT_STALE_VERSION");
+	    }
 
     await this.auditService.record({
       actor: input.actor,
@@ -221,48 +232,35 @@ export class StandardizationService {
   private async validateDraft(
     draft: Pick<
       StandardizedPayrollInputRecord,
-      | "fieldMappingVersionId"
-      | "employeeMatchCandidateId"
-      | "standardField"
-      | "evidenceRefs"
-      | "evidenceStatus"
+	      | "fieldMappingVersionId"
+	      | "employeeMatchCandidateId"
+	      | "clientId"
+	      | "runId"
+	      | "standardField"
+	      | "evidenceRefs"
+	      | "evidenceStatus"
       | "value"
       | "amount"
-    >,
-  ): Promise<StandardizationIssue[]> {
-    const issues: StandardizationIssue[] = [];
-    if (draft.fieldMappingVersionId) {
-      const mapping = await this.store.findMappingVersionById(draft.fieldMappingVersionId);
-      if (!mapping || mapping.status !== "CONFIRMED" || ["LOW", "CONFLICT"].includes(mapping.confidence)) {
-        issues.push({
-          code: "FIELD_MAPPING_NOT_CONFIRMED",
-          severity: "BLOCKING",
-          message: "标准化输入只能来自已人工确认且非低置信/冲突的映射版本。",
-        });
-      }
-    }
-    if (draft.employeeMatchCandidateId) {
-      const match = await this.store.findEmployeeMatchCandidateById(draft.employeeMatchCandidateId);
-      if (!match || match.status !== "CONFIRMED" || !match.employeeId) {
-        issues.push({
-          code: "EMPLOYEE_MATCH_NOT_CONFIRMED",
-          severity: "BLOCKING",
-          message: "员工匹配未确认，不能进入正式标准化输入。",
-        });
-      }
-    }
-    if (isCriticalStandardField(draft.standardField) && draft.evidenceRefs.length === 0) {
-      issues.push({
-        code: "CRITICAL_FIELD_EVIDENCE_MISSING",
-        severity: "BLOCKING",
-        message: "关键算薪字段缺证据，不能保存为生效版本。",
-      });
-    }
-    if (draft.evidenceStatus !== "VALID") {
-      issues.push({ code: "EVIDENCE_NOT_VALID", severity: "WARNING", message: "证据状态未验证。" });
-    }
-    return issues;
-  }
+	    >,
+	  ): Promise<StandardizationIssue[]> {
+	    const [mapping, match] = await Promise.all([
+	      draft.fieldMappingVersionId ? this.store.findMappingVersionById(draft.fieldMappingVersionId) : null,
+	      draft.employeeMatchCandidateId
+	        ? this.store.findEmployeeMatchCandidateById(draft.employeeMatchCandidateId)
+	        : null,
+	    ]);
+	    return validateStandardizedInputReferences({
+	      clientId: draft.clientId,
+	      runId: draft.runId,
+	      fieldMappingVersionId: draft.fieldMappingVersionId,
+	      employeeMatchCandidateId: draft.employeeMatchCandidateId,
+	      standardField: draft.standardField,
+	      evidenceRefs: draft.evidenceRefs,
+	      evidenceStatus: draft.evidenceStatus,
+	      fieldMappingVersion: mapping,
+	      employeeMatchCandidate: match,
+	    });
+	  }
 
   private async requireInput(id: string) {
     const input = await this.store.findInputById(id);
@@ -282,10 +280,6 @@ export class StandardizationService {
     }
     return run;
   }
-}
-
-export function isCriticalStandardField(field: string) {
-  return /(salary|amount|gross|net|bpjs|tax|npwp|nik|passport|bank|termination|join|fx)/i.test(field);
 }
 
 export class StandardizationServiceError extends Error {

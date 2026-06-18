@@ -154,6 +154,13 @@ export async function POST(request: NextRequest) {
     const targetField = body.targetField ?? candidate.targetField;
 
     const result = await prisma.$transaction(async (tx) => {
+      const claimResult = await tx.fieldMappingCandidate.updateMany({
+        where: { id: candidate.id, status: "CANDIDATE" },
+        data: { status: "CONFIRMED" },
+      });
+      if (claimResult.count !== 1) {
+        throw new Error("FIELD_MAPPING_CANDIDATE_NOT_REVIEWABLE");
+      }
       const maxVersion = await tx.fieldMappingVersion.aggregate({
         where: {
           runId: candidate.runId,
@@ -183,10 +190,10 @@ export async function POST(request: NextRequest) {
           confirmedById: auditFields.actorUserId,
         },
       });
-      const updatedCandidate = await tx.fieldMappingCandidate.update({
-        where: { id: candidate.id },
-        data: { status: "CONFIRMED" },
-      });
+      const updatedCandidate = await tx.fieldMappingCandidate.findUnique({ where: { id: candidate.id } });
+      if (!updatedCandidate) {
+        throw new Error("FIELD_MAPPING_CANDIDATE_NOT_FOUND");
+      }
       await tx.auditLog.create({
         data: {
           action: "FIELD_MAPPING_VERSION_CONFIRMED",

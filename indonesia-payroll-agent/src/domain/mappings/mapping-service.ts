@@ -55,9 +55,11 @@ export type FieldMappingStore = {
   } | null>;
   createCandidate(input: FieldMappingCandidateRecord): Promise<FieldMappingCandidateRecord>;
   findCandidateById(id: string): Promise<FieldMappingCandidateRecord | null>;
-  updateCandidateStatus(id: string, status: FieldMappingStatus): Promise<FieldMappingCandidateRecord>;
-  nextVersionNumber(runId: string, sourceSheetName: string, sourceColumnLabel: string): Promise<number>;
-  createVersion(input: FieldMappingVersionRecord): Promise<FieldMappingVersionRecord>;
+  confirmCandidateWithVersion(input: {
+    candidateId: string;
+    expectedStatus: Extract<FieldMappingStatus, "CANDIDATE">;
+    version: Omit<FieldMappingVersionRecord, "versionNumber">;
+  }): Promise<FieldMappingVersionRecord | null>;
 };
 
 const HISTORY_STATUSES = new Set<PayrollRunStatus>([
@@ -136,29 +138,30 @@ export class MappingService {
     }
 
     const now = new Date();
-    const version = await this.store.createVersion({
-      ...candidate,
-      id: randomUUID(),
+    const version = await this.store.confirmCandidateWithVersion({
       candidateId: candidate.id,
-      source: "MANUAL",
-      status: "CONFIRMED",
-      targetField,
-      fieldCategory: input.fieldCategory ?? candidate.fieldCategory,
-      confidence,
-      rationale: input.rationale.trim(),
-      evidenceRefs: input.evidenceRefs ?? candidate.evidenceRefs,
-      versionNumber: await this.store.nextVersionNumber(
-        candidate.runId,
-        candidate.sourceSheetName,
-        candidate.sourceColumnLabel,
-      ),
-      templateSourceRef: input.templateSourceRef ?? null,
-      confirmedById: input.actor.id,
-      confirmedAt: now,
-      createdAt: now,
-      updatedAt: now,
+      expectedStatus: "CANDIDATE",
+      version: {
+        ...candidate,
+        id: randomUUID(),
+        candidateId: candidate.id,
+        source: "MANUAL",
+        status: "CONFIRMED",
+        targetField,
+        fieldCategory: input.fieldCategory ?? candidate.fieldCategory,
+        confidence,
+        rationale: input.rationale.trim(),
+        evidenceRefs: input.evidenceRefs ?? candidate.evidenceRefs,
+        templateSourceRef: input.templateSourceRef ?? null,
+        confirmedById: input.actor.id,
+        confirmedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      },
     });
-    await this.store.updateCandidateStatus(candidate.id, "CONFIRMED");
+    if (!version) {
+      throw new MappingServiceError("FIELD_MAPPING_CANDIDATE_NOT_REVIEWABLE");
+    }
     await this.auditService.record({
       actor: input.actor,
       action: "FIELD_MAPPING_VERSION_CONFIRMED",
