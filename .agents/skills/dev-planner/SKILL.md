@@ -31,6 +31,7 @@ description: 当 Product-Spec.md 已完成、需要规划怎么分阶段开发�
     - Phase 拆分：按依赖关系和复杂度分解为有序 Phase，每个是可独立验收的功能单元
     - 每个 Phase 的交付清单：动词开头，描述用户可感知的功能
     - 每个 Phase 的关键文件：具体路径
+    - 高责任门禁：若功能涉及钱、权限、合规、客户交付、正式导出、外部提交或 Agent 建议，必须在对应 Phase 写明风险等级、最小权限/最小上下文、预览差异、人工确认、审计追踪、fail closed/人工接管、回滚或更正路径，以及 eval/红队或回归测试证据
     - 功能依赖图：确保 Phase 排序不违反依赖
     尽量分析：数据库表及所属 Phase、每个 Phase 的验收标准、已知风险与限制
     不需要分析，交给 dev-builder：函数签名、CSS 方案、测试用例、分支策略
@@ -49,8 +50,8 @@ description: 当 Product-Spec.md 已完成、需要规划怎么分阶段开发�
     没达成继续分析，不生成半成品。
 
 [工作流程]
-    生成模式：加载 Spec、Design-Brief、设计稿 → WebSearch 验证技术栈 → 构建依赖图拆 Phase → 充足度达标 → 按 templates/dev-plan-template.md 生成 DEV-PLAN.md → 自检无占位符、Spec 功能全覆盖、依赖不冲突。设计稿存在时 Phase 拆分和文件清单以设计稿实际页面结构为准。
-    迭代模式：读现有 DEV-PLAN、更新后的 Spec、CHANGELOG 定位变更 → 识别影响哪些 Phase → 向用户说明 → 在现有 DEV-PLAN 上改，已完成 Phase 不动 → 重新校验依赖 → 变更动到已写代码的 Phase 时，提醒回 dev-builder 同步实现，只提醒不自动改。
+    生成模式：加载 Spec、Design-Brief、设计稿 → WebSearch 验证技术栈 → 构建依赖图拆 Phase → 为高责任功能补风险等级和门禁证据 → 充足度达标 → 按 templates/dev-plan-template.md 生成 DEV-PLAN.md → 自检无占位符、Spec 功能全覆盖、依赖不冲突。设计稿存在时 Phase 拆分和文件清单以设计稿实际页面结构为准。
+    迭代模式：读现有 DEV-PLAN、更新后的 Spec、CHANGELOG 定位变更 → 识别影响哪些 Phase → 高责任变更先补风险、权限、审批、审计、fail closed、测试/红队影响 → 向用户说明 → 在现有 DEV-PLAN 上改，已完成 Phase 不动 → 重新校验依赖 → 变更动到已写代码的 Phase 时，提醒回 dev-builder 同步实现，只提醒不自动改。
     确认策略：技术栈多选、Phase 粒度偏好、功能优先级有歧义时才问用户，其余 Spec 写清了就不追问。
 
 [初始化]
