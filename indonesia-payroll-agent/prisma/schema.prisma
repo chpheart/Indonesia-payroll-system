@@ -273,6 +273,7 @@ enum AuditObjectType {
   AGENT_STEP
   TOOL_INVOCATION
   GUARDRAIL_RESULT
+  AGENT_OUTPUT_REVIEW
 
   @@map("audit_object_type")
 }
@@ -481,6 +482,23 @@ enum EvalResultStatus {
   @@map("eval_result_status")
 }
 
+enum EvalDatasetStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+
+  @@map("eval_dataset_status")
+}
+
+enum AgentOutputReviewDecision {
+  APPROVED
+  REJECTED
+  NEEDS_REVISION
+  ESCALATED
+
+  @@map("agent_output_review_decision")
+}
+
 model User {
   id                 String                  @id @default(cuid())
   email              String                  @unique
@@ -521,6 +539,7 @@ model User {
   toolSchemaVersions ToolSchemaVersion[]     @relation("ToolSchemaCreator")
   agentRuns          AgentRun[]              @relation("AgentRunTrigger")
   evalRuns           EvalRun[]               @relation("EvalRunActor")
+  agentOutputReviews AgentOutputReview[]     @relation("AgentOutputReviewer")
 
   @@map("users")
 }
@@ -1254,10 +1273,31 @@ model ToolSchemaVersion {
   @@map("tool_schema_versions")
 }
 
+model EvalDataset {
+  id                 String            @id @default(cuid())
+  datasetKey         String            @map("dataset_key")
+  versionNumber      Int               @map("version_number")
+  status             EvalDatasetStatus @default(DRAFT)
+  displayName        String            @map("display_name")
+  description        String
+  sourceRefs         String[]          @default([]) @map("source_refs")
+  requiredForRelease Boolean           @default(true) @map("required_for_release")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+  cases              EvalCase[]
+  runs               EvalRun[]
+
+  @@unique([datasetKey, versionNumber])
+  @@index([status, requiredForRelease])
+  @@map("eval_datasets")
+}
+
 model EvalCase {
   id                  String          @id @default(cuid())
+  evalDatasetId       String?         @map("eval_dataset_id")
   evalBindingRef      String          @map("eval_binding_ref")
   caseKey             String          @map("case_key")
+  caseVersion         Int             @default(1) @map("case_version")
   caseType            EvalCaseType    @map("case_type")
   riskLevel           AuditRiskLevel  @default(R1) @map("risk_level")
   requiredForRelease  Boolean         @default(true) @map("required_for_release")
@@ -1266,9 +1306,11 @@ model EvalCase {
   sourceRefs          String[]        @default([]) @map("source_refs")
   createdAt           DateTime        @default(now()) @map("created_at")
   updatedAt           DateTime        @updatedAt @map("updated_at")
+  evalDataset         EvalDataset?    @relation(fields: [evalDatasetId], references: [id], onDelete: SetNull)
   results             EvalRunResult[]
 
   @@unique([evalBindingRef, caseKey])
+  @@index([evalDatasetId, requiredForRelease])
   @@index([evalBindingRef, requiredForRelease])
   @@index([caseType, riskLevel])
   @@map("eval_cases")
@@ -1276,9 +1318,16 @@ model EvalCase {
 
 model EvalRun {
   id               String          @id @default(cuid())
+  evalDatasetId    String?         @map("eval_dataset_id")
+  evalDatasetVersion Int?          @map("eval_dataset_version")
   evalBindingRef   String          @map("eval_binding_ref")
   targetType       String          @map("target_type")
   targetRef        String          @map("target_ref")
+  promptVersionRef String?         @map("prompt_version_ref")
+  modelVersionRef  String?         @map("model_version_ref")
+  toolSchemaVersionRef String?     @map("tool_schema_version_ref")
+  retrievalIndexVersionRef String? @map("retrieval_index_version_ref")
+  guardrailConfigRef String?       @map("guardrail_config_ref")
   status           EvalRunStatus   @default(PENDING)
   totalCaseCount   Int             @default(0) @map("total_case_count")
   passedCaseCount  Int             @default(0) @map("passed_case_count")
@@ -1289,9 +1338,12 @@ model EvalRun {
   startedAt        DateTime        @default(now()) @map("started_at")
   completedAt      DateTime?       @map("completed_at")
   createdAt        DateTime        @default(now()) @map("created_at")
+  evalDataset      EvalDataset?    @relation(fields: [evalDatasetId], references: [id], onDelete: SetNull)
   runBy            User?           @relation("EvalRunActor", fields: [runById], references: [id], onDelete: SetNull)
   results          EvalRunResult[]
+  outputReviews    AgentOutputReview[]
 
+  @@index([evalDatasetId, evalDatasetVersion])
   @@index([evalBindingRef, targetRef, status])
   @@index([targetType, targetRef, createdAt])
   @@index([status, createdAt])
@@ -1350,6 +1402,7 @@ model AgentRun {
   steps                   AgentStep[]
   toolInvocations         ToolInvocation[]
   guardrailResults        GuardrailResult[]
+  outputReviews           AgentOutputReview[]
 
   @@index([runId, createdAt])
   @@index([clientId, createdAt])
@@ -1381,6 +1434,7 @@ model AgentStep {
   agentRun         AgentRun           @relation(fields: [agentRunId], references: [id], onDelete: Restrict)
   toolInvocations  ToolInvocation[]
   guardrailResults GuardrailResult[]
+  outputReviews    AgentOutputReview[]
 
   @@unique([agentRunId, sequence])
   @@index([agentRunId, nodeType])
@@ -1445,4 +1499,33 @@ model GuardrailResult {
   @@index([toolInvocationId, createdAt])
   @@index([guardrailName, triggered])
   @@map("guardrail_results")
+}
+
+model AgentOutputReview {
+  id                  String                    @id @default(cuid())
+  agentRunId          String                    @map("agent_run_id")
+  agentStepId         String?                   @map("agent_step_id")
+  evalRunId           String?                   @map("eval_run_id")
+  reviewerId          String?                   @map("reviewer_id")
+  decision            AgentOutputReviewDecision
+  riskLevel           AuditRiskLevel            @default(R1) @map("risk_level")
+  reviewSummary       String                    @map("review_summary")
+  reviewedOutput      Json                      @default("{}") @map("reviewed_output")
+  requiredCorrections Json                      @default("{}") @map("required_corrections")
+  effectiveObjectType String?                   @map("effective_object_type")
+  effectiveObjectId   String?                   @map("effective_object_id")
+  effectiveObjectVersionRef String?             @map("effective_object_version_ref")
+  createdAt           DateTime                  @default(now()) @map("created_at")
+  agentRun            AgentRun                  @relation(fields: [agentRunId], references: [id], onDelete: Restrict)
+  agentStep           AgentStep?                @relation(fields: [agentStepId], references: [id], onDelete: SetNull)
+  evalRun             EvalRun?                  @relation(fields: [evalRunId], references: [id], onDelete: SetNull)
+  reviewer            User?                     @relation("AgentOutputReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([agentRunId, createdAt])
+  @@index([agentStepId, createdAt])
+  @@index([evalRunId, decision])
+  @@index([effectiveObjectType, effectiveObjectId])
+  @@index([reviewerId, createdAt])
+  @@index([decision, riskLevel])
+  @@map("agent_output_reviews")
 }

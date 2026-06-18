@@ -4,6 +4,7 @@ import {
   BookOpen,
   Bot,
   BriefcaseBusiness,
+  ClipboardCheck,
   ClipboardList,
   Home,
   Inbox,
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/employees", label: "员工", icon: UsersRound },
   { href: "/rules", label: "规则", icon: BookOpen },
   { href: "/agent-governance", label: "Agent 治理", icon: BriefcaseBusiness },
+  { href: "/agent-evals", label: "Agent Eval", icon: ClipboardCheck },
   { href: "/archives", label: "归档", icon: Archive },
   { href: "/audit", label: "审计", icon: ShieldCheck },
 ];
@@ -50,9 +52,9 @@ export function AppShell({
           </div>
         </div>
         <nav className="nav-list" aria-label="主导航">
-          {navItems.map((item, index) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
-            const disabled = index === 7;
+            const disabled = item.href === "/archives";
             return disabled ? (
               <span className="nav-link disabled" key={`${item.href}-${item.label}`}>
                 <Icon aria-hidden size={18} />

@@ -68,6 +68,7 @@ export const AUDIT_OBJECT_TYPES = [
   "AGENT_STEP",
   "TOOL_INVOCATION",
   "GUARDRAIL_RESULT",
+  "AGENT_OUTPUT_REVIEW",
 ] as const;
 
 export const AUDIT_RISK_LEVELS = ["R0", "R1", "R2", "R3", "R4"] as const;
