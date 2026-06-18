@@ -1,0 +1,186 @@
+import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
+import { currentActor } from "@/app/(app)/server-actor";
+import {
+  approveChangeProposalAction,
+  closeChangeProposalAction,
+} from "@/app/(app)/payroll-runs/[runId]/phase8-actions";
+import { assertClientActionAllowed } from "@/domain/auth/permissions";
+import { ChangeProposalRow } from "@/components/change-proposal-row";
+import { prisma } from "@/lib/db/prisma";
+
+export const dynamic = "force-dynamic";
+
+type PageProps = {
+  params: Promise<{ runId: string }>;
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  PENDING_REVIEW: "待审核",
+  APPROVED: "已采纳",
+  APPROVED_WITH_MODIFICATION: "修改后采纳",
+  REJECTED: "已拒绝",
+  RETURNED: "已退回",
+  CONVERTED_TO_QUESTION: "转追问",
+  NO_ACTION: "无需处理",
+  MERGED: "已合并",
+  SPLIT: "已拆分",
+};
+
+export default async function ChangeReviewPage({ params }: PageProps) {
+  const actor = await currentActor();
+  const { runId } = await params;
+  const run = await prisma.payrollRun.findUnique({
+    where: { id: runId },
+    include: {
+      client: { select: { id: true, code: true, name: true } },
+      changeProposals: {
+        include: {
+          rawInputItem: { select: { id: true, redactedSummary: true, sourceChannel: true } },
+          targetEmployee: { select: { id: true, employeeCode: true, fullName: true } },
+          ledgerEntry: { select: { id: true, reviewedAt: true } },
+        },
+        orderBy: [{ status: "asc" }, { riskLevel: "desc" }, { createdAt: "desc" }],
+      },
+      changeLedgerEntries: {
+        include: {
+          proposal: { select: { id: true, source: true, reason: true } },
+          targetEmployee: { select: { employeeCode: true, fullName: true } },
+          reviewedBy: { select: { displayName: true, email: true } },
+        },
+        orderBy: { reviewedAt: "desc" },
+      },
+    },
+  });
+
+  if (!run) {
+    return <div className="empty-state">Payroll Run 不存在。</div>;
+  }
+  assertClientActionAllowed(actor, "viewClient", run.clientId);
+
+  const pendingCount = run.changeProposals.filter((proposal) => proposal.status === "PENDING_REVIEW").length;
+
+  return (
+    <div className="page-stack">
+      <header className="run-header">
+        <Link className="back-button" href={`/payroll-runs/${run.id}`} aria-label="返回 Run">
+          <ChevronLeft aria-hidden size={17} />
+        </Link>
+        <div>
+          <h2>变更 Proposal Review</h2>
+          <span>
+            {run.client.code} · {run.client.name} · {run.payrollMonth}
+          </span>
+        </div>
+        <span className={`risk-badge ${pendingCount > 0 ? "r2" : "r0"}`}>
+          {pendingCount} 待审核
+        </span>
+      </header>
+
+      <section className="content-section">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Candidate layer</p>
+            <h2>ChangeProposal 候选队列</h2>
+          </div>
+          <span className="section-meta">未审核候选不会写入 ledger、员工主档或算薪结果</span>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>来源 / 对象</th>
+                <th>变更字段</th>
+                <th>差异预览</th>
+                <th>风险 / 证据</th>
+                <th>状态 / 审核</th>
+              </tr>
+            </thead>
+            <tbody>
+              {run.changeProposals.map((proposal) => (
+                <ChangeProposalRow
+                  key={proposal.id}
+                  proposal={proposal}
+                  statusLabel={STATUS_LABELS[proposal.status] ?? proposal.status}
+                  actions={
+                    proposal.status === "PENDING_REVIEW" ? (
+                      <div className="action-stack">
+                        <form action={approveChangeProposalAction}>
+                          <input type="hidden" name="runId" value={run.id} />
+                          <input type="hidden" name="proposalId" value={proposal.id} />
+                          <select name="confidence" defaultValue={proposal.confidence}>
+                            <option value="HIGH">HIGH</option>
+                            <option value="MEDIUM">MEDIUM</option>
+                            <option value="LOW">LOW</option>
+                            <option value="CONFLICT">CONFLICT</option>
+                          </select>
+                          <input name="evidenceRefs" placeholder="证据 refs，逗号分隔" defaultValue={proposal.evidenceRefs.join(", ")} />
+                          <input name="reviewNote" placeholder="采纳理由" required />
+                          <button type="submit">采纳入账</button>
+                        </form>
+                        <form action={closeChangeProposalAction}>
+                          <input type="hidden" name="runId" value={run.id} />
+                          <input type="hidden" name="proposalId" value={proposal.id} />
+                          <select name="action" defaultValue="REJECTED">
+                            <option value="REJECTED">拒绝</option>
+                            <option value="RETURNED">退回</option>
+                            <option value="NO_ACTION">无需处理</option>
+                          </select>
+                          <input name="reviewNote" placeholder="处理理由" required />
+                          <button type="submit">关闭候选</button>
+                        </form>
+                      </div>
+                    ) : (
+                      <span>{proposal.reviewNote ?? proposal.ledgerEntry?.id ?? "已处理"}</span>
+                    )
+                  }
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="content-section">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Committed layer</p>
+            <h2>ChangeLedgerEntry 正式账本</h2>
+          </div>
+          <span className="section-meta">只追加，不编辑；更正走 reversal / amendment / correction</span>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>入账时间</th>
+                <th>对象</th>
+                <th>字段</th>
+                <th>正式值</th>
+                <th>审核人</th>
+              </tr>
+            </thead>
+            <tbody>
+              {run.changeLedgerEntries.map((entry) => (
+                <tr key={entry.id}>
+                  <td>{entry.reviewedAt.toLocaleString("zh-CN")}</td>
+                  <td>
+                    <strong>{entry.entryType}</strong>
+                    <span>{entry.targetEmployee ? `${entry.targetEmployee.employeeCode} · ${entry.targetEmployee.fullName}` : entry.targetObjectType}</span>
+                  </td>
+                  <td>{entry.targetField}</td>
+                  <td>{formatJson(entry.newValue)}</td>
+                  <td>{entry.reviewedBy?.displayName ?? entry.reviewedBy?.email ?? "系统"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function formatJson(value: unknown) {
+  return JSON.stringify(value).slice(0, 160);
+}
