@@ -255,6 +255,15 @@ enum AuditAction {
   STANDARDIZED_INPUT_CONFIRMED
   EMPLOYEE_MATCH_CANDIDATE_CREATED
   EMPLOYEE_MATCH_CONFIRMED
+  EVIDENCE_CREATED
+  EVIDENCE_LINKED
+  EVIDENCE_FILE_VIEWED
+  QUESTION_ITEM_CREATED
+  QUESTION_STATUS_CHANGED
+  CUSTOMER_CONFIRMATION_PACK_CREATED
+  CUSTOMER_CONFIRMATION_PACK_UPDATED
+  CUSTOMER_CONFIRMATION_RECORDED
+  CUSTOMER_CONFIRMATION_INVALIDATED
 
   @@map("audit_action")
 }
@@ -289,6 +298,12 @@ enum AuditObjectType {
   FIELD_MAPPING_VERSION
   STANDARDIZED_PAYROLL_INPUT
   EMPLOYEE_MATCH_CANDIDATE
+  EVIDENCE
+  EVIDENCE_LINK
+  QUESTION_ITEM
+  CUSTOMER_CONFIRMATION_PACK
+  CUSTOMER_CONFIRMATION_PACK_ITEM
+  CUSTOMER_CONFIRMATION
 
   @@map("audit_object_type")
 }
@@ -618,54 +633,184 @@ enum EvidenceStatus {
   @@map("evidence_status")
 }
 
+enum EvidenceKind {
+  WECHAT_TEXT
+  WECHAT_SCREENSHOT
+  CUSTOMER_FILE
+  CUSTOMER_CONFIRMATION
+  INTERNAL_NOTE
+  SYSTEM_GENERATED
+  OTHER
+
+  @@map("evidence_kind")
+}
+
+enum EvidenceLifecycleStatus {
+  VALID
+  STALE
+  VOIDED
+
+  @@map("evidence_lifecycle_status")
+}
+
+enum EvidenceLinkObjectType {
+  CLIENT
+  PAYROLL_RUN
+  RAW_INPUT_ITEM
+  UPLOADED_FILE_VERSION
+  WORKBOOK_CELL
+  CHANGE_PROPOSAL
+  CHANGE_LEDGER_ENTRY
+  CUSTOMER_CONFIRMATION_PACK
+  CUSTOMER_CONFIRMATION_PACK_ITEM
+  CUSTOMER_CONFIRMATION
+  QUESTION_ITEM
+  EMPLOYEE
+  EMPLOYEE_MASTER_VERSION
+  FIELD_MAPPING_VERSION
+  STANDARDIZED_PAYROLL_INPUT
+  RULE_VERSION
+  FX_RATE_VERSION
+  CLIENT_SCOPE
+  HIGH_RISK_ISSUE
+  CORRECTION_RUN
+  EXPORT_PREVIEW
+
+  @@map("evidence_link_object_type")
+}
+
+enum CoverageScopeType {
+  FULL_RUN
+  EMPLOYEES
+  FIELDS
+  CLIENT_SCOPE
+  FILES
+  EXPORT_PREVIEW
+  RESULT_VERSION
+  MIXED
+
+  @@map("coverage_scope_type")
+}
+
+enum CustomerConfirmationPackStatus {
+  DRAFT
+  READY_FOR_CUSTOMER
+  PARTIALLY_CONFIRMED
+  CONFIRMED
+  INVALIDATED
+  SUPERSEDED
+
+  @@map("customer_confirmation_pack_status")
+}
+
+enum CustomerConfirmationPackItemCategory {
+  MONTHLY_CHANGE
+  MISSING_INFORMATION
+  EXCEPTION
+  CONFIRMATION_REQUIRED
+  SUGGESTED_MESSAGE
+  EVIDENCE_ATTACHMENT
+
+  @@map("customer_confirmation_pack_item_category")
+}
+
+enum CustomerConfirmationPackItemStatus {
+  OPEN
+  INTERNAL_HANDLING
+  NOT_CUSTOMER_FACING
+  CONFIRMED
+  INVALIDATED
+
+  @@map("customer_confirmation_pack_item_status")
+}
+
+enum CustomerConfirmationStatus {
+  VALID
+  STALE
+  VOIDED
+
+  @@map("customer_confirmation_status")
+}
+
+enum QuestionSource {
+  AGENT
+  PRECHECK
+  CHANGE_PROPOSAL_REVIEW
+  CUSTOMER_REPLY
+  MANUAL
+
+  @@map("question_source")
+}
+
+enum QuestionStatus {
+  PENDING
+  SENT_TO_CUSTOMER
+  WAITING_CUSTOMER_REPLY
+  EVIDENCE_BACKFILLED
+  RESOLVED
+  CLOSED
+
+  @@map("question_status")
+}
+
 model User {
-  id                 String                     @id @default(cuid())
-  email              String                     @unique
-  displayName        String                     @map("display_name")
-  status             UserStatus                 @default(ACTIVE)
-  createdAt          DateTime                   @default(now()) @map("created_at")
-  updatedAt          DateTime                   @updatedAt @map("updated_at")
-  userRoles          UserRole[]
-  clientAccesses     ClientAccess[]             @relation("ClientAccessUser")
-  grantedAccesses    ClientAccess[]             @relation("ClientAccessGrantor")
-  createdAudits      AuditLog[]                 @relation("AuditActor")
-  auditCorrections   AuditCorrection[]          @relation("AuditCorrectionActor")
-  configVersions     ClientConfigVersion[]      @relation("ClientConfigVersionCreator")
-  employeeVersions   EmployeeMasterVersion[]    @relation("EmployeeMasterVersionCreator")
-  createdRuns        PayrollRun[]               @relation("PayrollRunCreator")
-  runAssignments     RunAssignment[]            @relation("RunAssignmentUser")
-  assignedRuns       RunAssignment[]            @relation("RunAssignmentAssigner")
-  triggeredEvents    RunStatusEvent[]           @relation("RunStatusEventTrigger")
-  completedReminders RunReminder[]              @relation("RunReminderCompleter")
-  rawInputItems      RawInputItem[]             @relation("RawInputCreator")
-  uploadedFiles      UploadedFileVersion[]      @relation("UploadedFileUploader")
-  fileReplacements   FileReplacement[]          @relation("FileReplacementActor")
-  ownedCases         CaseItem[]                 @relation("CaseItemOwner")
-  resolvedCases      CaseItem[]                 @relation("CaseItemResolver")
-  payrollComponents  PayrollComponent[]         @relation("PayrollComponentCreator")
-  componentAliases   ClientComponentAlias[]     @relation("ComponentAliasCreator")
-  confirmedAliases   ClientComponentAlias[]     @relation("ComponentAliasConfirmer")
-  draftedRules       RuleVersion[]              @relation("RuleVersionDrafter")
-  publishedRules     RuleVersion[]              @relation("RuleVersionPublisher")
-  disabledRules      RuleVersion[]              @relation("RuleVersionDisabler")
-  ruleApprovals      RuleApproval[]             @relation("RuleApprovalApprover")
-  fxRatesCreated     FXRateVersion[]            @relation("FXRateCreator")
-  fxRatesConfirmed   FXRateVersion[]            @relation("FXRateConfirmer")
-  regressionRuns     RegressionRun[]            @relation("RegressionRunActor")
-  promptVersions     PromptVersion[]            @relation("PromptVersionCreator")
-  modelVersions      ModelVersion[]             @relation("ModelVersionCreator")
-  retrievalIndexes   RetrievalIndexVersion[]    @relation("RetrievalIndexCreator")
-  toolSchemaVersions ToolSchemaVersion[]        @relation("ToolSchemaCreator")
-  agentRuns          AgentRun[]                 @relation("AgentRunTrigger")
-  evalRuns           EvalRun[]                  @relation("EvalRunActor")
-  agentOutputReviews AgentOutputReview[]        @relation("AgentOutputReviewer")
-  proposedChanges    ChangeProposal[]           @relation("ChangeProposalCreator")
-  reviewedChanges    ChangeProposal[]           @relation("ChangeProposalReviewer")
-  reviewedLedger     ChangeLedgerEntry[]        @relation("ChangeLedgerReviewer")
-  confirmedMappings  FieldMappingVersion[]      @relation("FieldMappingConfirmer")
-  modifiedInputs     StandardizedPayrollInput[] @relation("StandardizedInputModifier")
-  confirmedInputs    StandardizedPayrollInput[] @relation("StandardizedInputConfirmer")
-  confirmedMatches   EmployeeMatchCandidate[]   @relation("EmployeeMatchConfirmer")
+  id                      String                         @id @default(cuid())
+  email                   String                         @unique
+  displayName             String                         @map("display_name")
+  status                  UserStatus                     @default(ACTIVE)
+  createdAt               DateTime                       @default(now()) @map("created_at")
+  updatedAt               DateTime                       @updatedAt @map("updated_at")
+  userRoles               UserRole[]
+  clientAccesses          ClientAccess[]                 @relation("ClientAccessUser")
+  grantedAccesses         ClientAccess[]                 @relation("ClientAccessGrantor")
+  createdAudits           AuditLog[]                     @relation("AuditActor")
+  auditCorrections        AuditCorrection[]              @relation("AuditCorrectionActor")
+  configVersions          ClientConfigVersion[]          @relation("ClientConfigVersionCreator")
+  employeeVersions        EmployeeMasterVersion[]        @relation("EmployeeMasterVersionCreator")
+  createdRuns             PayrollRun[]                   @relation("PayrollRunCreator")
+  runAssignments          RunAssignment[]                @relation("RunAssignmentUser")
+  assignedRuns            RunAssignment[]                @relation("RunAssignmentAssigner")
+  triggeredEvents         RunStatusEvent[]               @relation("RunStatusEventTrigger")
+  completedReminders      RunReminder[]                  @relation("RunReminderCompleter")
+  rawInputItems           RawInputItem[]                 @relation("RawInputCreator")
+  uploadedFiles           UploadedFileVersion[]          @relation("UploadedFileUploader")
+  fileReplacements        FileReplacement[]              @relation("FileReplacementActor")
+  ownedCases              CaseItem[]                     @relation("CaseItemOwner")
+  resolvedCases           CaseItem[]                     @relation("CaseItemResolver")
+  payrollComponents       PayrollComponent[]             @relation("PayrollComponentCreator")
+  componentAliases        ClientComponentAlias[]         @relation("ComponentAliasCreator")
+  confirmedAliases        ClientComponentAlias[]         @relation("ComponentAliasConfirmer")
+  draftedRules            RuleVersion[]                  @relation("RuleVersionDrafter")
+  publishedRules          RuleVersion[]                  @relation("RuleVersionPublisher")
+  disabledRules           RuleVersion[]                  @relation("RuleVersionDisabler")
+  ruleApprovals           RuleApproval[]                 @relation("RuleApprovalApprover")
+  fxRatesCreated          FXRateVersion[]                @relation("FXRateCreator")
+  fxRatesConfirmed        FXRateVersion[]                @relation("FXRateConfirmer")
+  regressionRuns          RegressionRun[]                @relation("RegressionRunActor")
+  promptVersions          PromptVersion[]                @relation("PromptVersionCreator")
+  modelVersions           ModelVersion[]                 @relation("ModelVersionCreator")
+  retrievalIndexes        RetrievalIndexVersion[]        @relation("RetrievalIndexCreator")
+  toolSchemaVersions      ToolSchemaVersion[]            @relation("ToolSchemaCreator")
+  agentRuns               AgentRun[]                     @relation("AgentRunTrigger")
+  evalRuns                EvalRun[]                      @relation("EvalRunActor")
+  agentOutputReviews      AgentOutputReview[]            @relation("AgentOutputReviewer")
+  proposedChanges         ChangeProposal[]               @relation("ChangeProposalCreator")
+  reviewedChanges         ChangeProposal[]               @relation("ChangeProposalReviewer")
+  reviewedLedger          ChangeLedgerEntry[]            @relation("ChangeLedgerReviewer")
+  confirmedMappings       FieldMappingVersion[]          @relation("FieldMappingConfirmer")
+  modifiedInputs          StandardizedPayrollInput[]     @relation("StandardizedInputModifier")
+  confirmedInputs         StandardizedPayrollInput[]     @relation("StandardizedInputConfirmer")
+  confirmedMatches        EmployeeMatchCandidate[]       @relation("EmployeeMatchConfirmer")
+  uploadedEvidence        Evidence[]                     @relation("EvidenceUploader")
+  confirmedEvidence       Evidence[]                     @relation("EvidenceConfirmer")
+  linkedEvidence          EvidenceLink[]                 @relation("EvidenceLinkActor")
+  generatedPacks          CustomerConfirmationPack[]     @relation("ConfirmationPackGenerator")
+  editedPackItems         CustomerConfirmationPackItem[] @relation("ConfirmationPackItemEditor")
+  backfilledConfirmations CustomerConfirmation[]         @relation("CustomerConfirmationBackfiller")
+  createdQuestions        QuestionItem[]                 @relation("QuestionCreator")
+  resolvedQuestions       QuestionItem[]                 @relation("QuestionResolver")
+  closedQuestions         QuestionItem[]                 @relation("QuestionCloser")
+  questionEvents          QuestionStatusEvent[]          @relation("QuestionStatusActor")
 
   @@map("users")
 }
@@ -696,32 +841,38 @@ model UserRole {
 }
 
 model Client {
-  id                      String                     @id @default(cuid())
-  code                    String                     @unique
-  name                    String
-  legalEntityName         String?                    @map("legal_entity_name")
-  status                  ClientStatus               @default(ACTIVE)
-  hasHistoricalPayroll    Boolean                    @default(false) @map("has_historical_payroll")
-  createdAt               DateTime                   @default(now()) @map("created_at")
-  updatedAt               DateTime                   @updatedAt @map("updated_at")
-  accesses                ClientAccess[]
-  configVersions          ClientConfigVersion[]
-  employees               Employee[]
-  payrollRuns             PayrollRun[]
-  rawInputItems           RawInputItem[]
-  uploadedFileVersions    UploadedFileVersion[]
-  caseItems               CaseItem[]
-  auditLogs               AuditLog[]
-  componentAliases        ClientComponentAlias[]
-  ruleVersions            RuleVersion[]
-  fxRateVersions          FXRateVersion[]
-  agentRuns               AgentRun[]
-  changeProposals         ChangeProposal[]
-  changeLedgerEntries     ChangeLedgerEntry[]
-  fieldMappingVersions    FieldMappingVersion[]
-  fieldMappingCandidates  FieldMappingCandidate[]
-  standardizedInputs      StandardizedPayrollInput[]
-  employeeMatchCandidates EmployeeMatchCandidate[]
+  id                            String                         @id @default(cuid())
+  code                          String                         @unique
+  name                          String
+  legalEntityName               String?                        @map("legal_entity_name")
+  status                        ClientStatus                   @default(ACTIVE)
+  hasHistoricalPayroll          Boolean                        @default(false) @map("has_historical_payroll")
+  createdAt                     DateTime                       @default(now()) @map("created_at")
+  updatedAt                     DateTime                       @updatedAt @map("updated_at")
+  accesses                      ClientAccess[]
+  configVersions                ClientConfigVersion[]
+  employees                     Employee[]
+  payrollRuns                   PayrollRun[]
+  rawInputItems                 RawInputItem[]
+  uploadedFileVersions          UploadedFileVersion[]
+  caseItems                     CaseItem[]
+  auditLogs                     AuditLog[]
+  componentAliases              ClientComponentAlias[]
+  ruleVersions                  RuleVersion[]
+  fxRateVersions                FXRateVersion[]
+  agentRuns                     AgentRun[]
+  changeProposals               ChangeProposal[]
+  changeLedgerEntries           ChangeLedgerEntry[]
+  fieldMappingVersions          FieldMappingVersion[]
+  fieldMappingCandidates        FieldMappingCandidate[]
+  standardizedInputs            StandardizedPayrollInput[]
+  employeeMatchCandidates       EmployeeMatchCandidate[]
+  evidences                     Evidence[]
+  evidenceLinks                 EvidenceLink[]
+  customerConfirmationPacks     CustomerConfirmationPack[]
+  customerConfirmationPackItems CustomerConfirmationPackItem[]
+  customerConfirmations         CustomerConfirmation[]
+  questionItems                 QuestionItem[]
 
   @@map("clients")
 }
@@ -812,27 +963,28 @@ model ClientConfigVersion {
 }
 
 model Employee {
-  id                   String                     @id @default(cuid())
-  clientId             String                     @map("client_id")
-  employeeCode         String                     @map("employee_code")
-  fullName             String                     @map("full_name")
-  status               EmployeeStatus             @default(ACTIVE)
-  workCity             String?                    @map("work_city")
-  nikOrPassport        String?                    @map("nik_or_passport")
-  npwp                 String?
-  bpjsHealthNumber     String?                    @map("bpjs_health_number")
-  bpjsEmploymentNumber String?                    @map("bpjs_employment_number")
-  bankName             String?                    @map("bank_name")
-  bankAccountNumber    String?                    @map("bank_account_number")
-  hasHistoricalPayroll Boolean                    @default(false) @map("has_historical_payroll")
-  createdAt            DateTime                   @default(now()) @map("created_at")
-  updatedAt            DateTime                   @updatedAt @map("updated_at")
-  client               Client                     @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  masterVersions       EmployeeMasterVersion[]
-  changeProposals      ChangeProposal[]           @relation("ChangeProposalTargetEmployee")
-  changeLedgerEntries  ChangeLedgerEntry[]        @relation("ChangeLedgerTargetEmployee")
-  standardizedInputs   StandardizedPayrollInput[] @relation("StandardizedInputEmployee")
-  matchCandidates      EmployeeMatchCandidate[]   @relation("EmployeeMatchCandidateEmployee")
+  id                    String                         @id @default(cuid())
+  clientId              String                         @map("client_id")
+  employeeCode          String                         @map("employee_code")
+  fullName              String                         @map("full_name")
+  status                EmployeeStatus                 @default(ACTIVE)
+  workCity              String?                        @map("work_city")
+  nikOrPassport         String?                        @map("nik_or_passport")
+  npwp                  String?
+  bpjsHealthNumber      String?                        @map("bpjs_health_number")
+  bpjsEmploymentNumber  String?                        @map("bpjs_employment_number")
+  bankName              String?                        @map("bank_name")
+  bankAccountNumber     String?                        @map("bank_account_number")
+  hasHistoricalPayroll  Boolean                        @default(false) @map("has_historical_payroll")
+  createdAt             DateTime                       @default(now()) @map("created_at")
+  updatedAt             DateTime                       @updatedAt @map("updated_at")
+  client                Client                         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  masterVersions        EmployeeMasterVersion[]
+  changeProposals       ChangeProposal[]               @relation("ChangeProposalTargetEmployee")
+  changeLedgerEntries   ChangeLedgerEntry[]            @relation("ChangeLedgerTargetEmployee")
+  standardizedInputs    StandardizedPayrollInput[]     @relation("StandardizedInputEmployee")
+  matchCandidates       EmployeeMatchCandidate[]       @relation("EmployeeMatchCandidateEmployee")
+  confirmationPackItems CustomerConfirmationPackItem[] @relation("ConfirmationPackItemEmployee")
 
   @@unique([clientId, employeeCode])
   @@index([clientId, status])
@@ -862,31 +1014,31 @@ model EmployeeMasterVersion {
 }
 
 model PayrollRun {
-  id                               String                     @id @default(cuid())
-  clientId                         String                     @map("client_id")
-  payrollMonth                     String                     @map("payroll_month")
-  status                           PayrollRunStatus           @default(DRAFT)
-  statusReason                     String?                    @map("status_reason")
-  targetCompletionDate             DateTime?                  @map("target_completion_date")
-  payDate                          DateTime?                  @map("pay_date")
-  pendingIntakeAssignmentCount     Int                        @default(0) @map("pending_intake_assignment_count")
-  pendingProposalReviewCount       Int                        @default(0) @map("pending_proposal_review_count")
-  blockingIssueCount               Int                        @default(0) @map("blocking_issue_count")
-  highRiskIssueCount               Int                        @default(0) @map("high_risk_issue_count")
-  pendingCustomerConfirmationCount Int                        @default(0) @map("pending_customer_confirmation_count")
-  ruleVersionSnapshot              Json                       @default("[]") @map("rule_version_snapshot")
-  fxRateSnapshot                   Json                       @default("[]") @map("fx_rate_snapshot")
-  precheckSnapshot                 Json                       @default("{}") @map("precheck_snapshot")
-  createdById                      String?                    @map("created_by_id")
-  lockedAt                         DateTime?                  @map("locked_at")
-  exportedAt                       DateTime?                  @map("exported_at")
-  archivedAt                       DateTime?                  @map("archived_at")
-  voidedAt                         DateTime?                  @map("voided_at")
-  correctedAt                      DateTime?                  @map("corrected_at")
-  createdAt                        DateTime                   @default(now()) @map("created_at")
-  updatedAt                        DateTime                   @updatedAt @map("updated_at")
-  client                           Client                     @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  createdBy                        User?                      @relation("PayrollRunCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  id                               String                         @id @default(cuid())
+  clientId                         String                         @map("client_id")
+  payrollMonth                     String                         @map("payroll_month")
+  status                           PayrollRunStatus               @default(DRAFT)
+  statusReason                     String?                        @map("status_reason")
+  targetCompletionDate             DateTime?                      @map("target_completion_date")
+  payDate                          DateTime?                      @map("pay_date")
+  pendingIntakeAssignmentCount     Int                            @default(0) @map("pending_intake_assignment_count")
+  pendingProposalReviewCount       Int                            @default(0) @map("pending_proposal_review_count")
+  blockingIssueCount               Int                            @default(0) @map("blocking_issue_count")
+  highRiskIssueCount               Int                            @default(0) @map("high_risk_issue_count")
+  pendingCustomerConfirmationCount Int                            @default(0) @map("pending_customer_confirmation_count")
+  ruleVersionSnapshot              Json                           @default("[]") @map("rule_version_snapshot")
+  fxRateSnapshot                   Json                           @default("[]") @map("fx_rate_snapshot")
+  precheckSnapshot                 Json                           @default("{}") @map("precheck_snapshot")
+  createdById                      String?                        @map("created_by_id")
+  lockedAt                         DateTime?                      @map("locked_at")
+  exportedAt                       DateTime?                      @map("exported_at")
+  archivedAt                       DateTime?                      @map("archived_at")
+  voidedAt                         DateTime?                      @map("voided_at")
+  correctedAt                      DateTime?                      @map("corrected_at")
+  createdAt                        DateTime                       @default(now()) @map("created_at")
+  updatedAt                        DateTime                       @updatedAt @map("updated_at")
+  client                           Client                         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  createdBy                        User?                          @relation("PayrollRunCreator", fields: [createdById], references: [id], onDelete: SetNull)
   statusEvents                     RunStatusEvent[]
   assignments                      RunAssignment[]
   reminders                        RunReminder[]
@@ -901,6 +1053,12 @@ model PayrollRun {
   fieldMappingCandidates           FieldMappingCandidate[]
   standardizedInputs               StandardizedPayrollInput[]
   employeeMatchCandidates          EmployeeMatchCandidate[]
+  evidences                        Evidence[]
+  evidenceLinks                    EvidenceLink[]
+  customerConfirmationPacks        CustomerConfirmationPack[]
+  customerConfirmationPackItems    CustomerConfirmationPackItem[]
+  customerConfirmations            CustomerConfirmation[]
+  questionItems                    QuestionItem[]
 
   @@unique([clientId, payrollMonth])
   @@index([status, targetCompletionDate])
@@ -995,6 +1153,8 @@ model RawInputItem {
   fieldMappingCandidates  FieldMappingCandidate[]
   standardizedInputs      StandardizedPayrollInput[]
   employeeMatchCandidates EmployeeMatchCandidate[]
+  evidences               Evidence[]
+  questionItems           QuestionItem[]
 
   @@index([clientId, payrollMonth, status])
   @@index([runId, status])
@@ -1037,6 +1197,7 @@ model UploadedFileVersion {
   fieldMappingVersions   FieldMappingVersion[]
   fieldMappingCandidates FieldMappingCandidate[]
   standardizedInputs     StandardizedPayrollInput[]
+  evidences              Evidence[]
 
   @@unique([rawInputItemId, versionNumber])
   @@index([clientId, payrollMonth, purpose])
@@ -1332,6 +1493,7 @@ model ChangeProposal {
   reviewedBy           User?                @relation("ChangeProposalReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
   targetEmployee       Employee?            @relation("ChangeProposalTargetEmployee", fields: [targetEmployeeId], references: [id], onDelete: SetNull)
   ledgerEntry          ChangeLedgerEntry?
+  questionItems        QuestionItem[]
 
   @@index([clientId, status])
   @@index([runId, status])
@@ -1550,6 +1712,239 @@ model EmployeeMatchCandidate {
   @@index([matchMethod, confidence])
   @@index([sourceAgentRunId])
   @@map("employee_match_candidates")
+}
+
+model Evidence {
+  id                    String                  @id @default(cuid())
+  clientId              String                  @map("client_id")
+  runId                 String?                 @map("run_id")
+  rawInputItemId        String?                 @map("raw_input_item_id")
+  fileVersionId         String?                 @map("file_version_id")
+  kind                  EvidenceKind
+  sourceChannel         RawInputSourceChannel?  @map("source_channel")
+  status                EvidenceLifecycleStatus @default(VALID)
+  redactedSummary       String                  @map("redacted_summary")
+  contentText           String?                 @map("content_text") @db.Text
+  attachmentKey         String?                 @map("attachment_key")
+  attachmentFileName    String?                 @map("attachment_file_name")
+  attachmentMimeType    String?                 @map("attachment_mime_type")
+  attachmentSizeBytes   Int?                    @map("attachment_size_bytes")
+  contentHash           String?                 @map("content_hash")
+  applicableMonth       String?                 @map("applicable_month")
+  sourceLabel           String                  @map("source_label")
+  coverageScopeType     CoverageScopeType       @default(MIXED) @map("coverage_scope_type")
+  coverageScope         Json                    @default("{}") @map("coverage_scope")
+  notes                 String?                 @db.Text
+  uploadedById          String?                 @map("uploaded_by_id")
+  confirmedById         String?                 @map("confirmed_by_id")
+  confirmedAt           DateTime?               @map("confirmed_at")
+  voidedAt              DateTime?               @map("voided_at")
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
+  client                Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun            PayrollRun?             @relation(fields: [runId], references: [id], onDelete: Restrict)
+  rawInputItem          RawInputItem?           @relation(fields: [rawInputItemId], references: [id], onDelete: SetNull)
+  fileVersion           UploadedFileVersion?    @relation(fields: [fileVersionId], references: [id], onDelete: SetNull)
+  uploadedBy            User?                   @relation("EvidenceUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  confirmedBy           User?                   @relation("EvidenceConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+  links                 EvidenceLink[]
+  customerConfirmations CustomerConfirmation[]
+
+  @@index([clientId, applicableMonth, status])
+  @@index([runId, status])
+  @@index([rawInputItemId])
+  @@index([fileVersionId])
+  @@index([contentHash])
+  @@map("evidence")
+}
+
+model EvidenceLink {
+  id                String                  @id @default(cuid())
+  evidenceId        String                  @map("evidence_id")
+  clientId          String                  @map("client_id")
+  runId             String?                 @map("run_id")
+  objectType        EvidenceLinkObjectType  @map("object_type")
+  objectId          String                  @map("object_id")
+  objectLabel       String?                 @map("object_label")
+  targetField       String?                 @map("target_field")
+  coverageScopeType CoverageScopeType       @default(MIXED) @map("coverage_scope_type")
+  coverageScope     Json                    @default("{}") @map("coverage_scope")
+  status            EvidenceLifecycleStatus @default(VALID)
+  linkedById        String?                 @map("linked_by_id")
+  linkedAt          DateTime                @default(now()) @map("linked_at")
+  evidence          Evidence                @relation(fields: [evidenceId], references: [id], onDelete: Restrict)
+  client            Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun        PayrollRun?             @relation(fields: [runId], references: [id], onDelete: Restrict)
+  linkedBy          User?                   @relation("EvidenceLinkActor", fields: [linkedById], references: [id], onDelete: SetNull)
+
+  @@unique([evidenceId, objectType, objectId, targetField])
+  @@index([clientId, objectType, objectId])
+  @@index([runId, objectType])
+  @@index([status, linkedAt])
+  @@map("evidence_links")
+}
+
+model CustomerConfirmationPack {
+  id                      String                         @id @default(cuid())
+  clientId                String                         @map("client_id")
+  runId                   String                         @map("run_id")
+  versionNumber           Int                            @map("version_number")
+  previousPackId          String?                        @map("previous_pack_id")
+  status                  CustomerConfirmationPackStatus @default(DRAFT)
+  dataVersionRef          String                         @map("data_version_ref")
+  resultVersionRef        String?                        @map("result_version_ref")
+  exportPreviewVersionRef String?                        @map("export_preview_version_ref")
+  sourceSnapshot          Json                           @default("{}") @map("source_snapshot")
+  generatedMessage        String                         @map("generated_message") @db.Text
+  editableMessage         String?                        @map("editable_message") @db.Text
+  invalidationReason      String?                        @map("invalidation_reason")
+  invalidatedAt           DateTime?                      @map("invalidated_at")
+  generatedById           String?                        @map("generated_by_id")
+  generatedAt             DateTime                       @default(now()) @map("generated_at")
+  createdAt               DateTime                       @default(now()) @map("created_at")
+  updatedAt               DateTime                       @updatedAt @map("updated_at")
+  client                  Client                         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun              PayrollRun                     @relation(fields: [runId], references: [id], onDelete: Restrict)
+  previousPack            CustomerConfirmationPack?      @relation("PackVersionLineage", fields: [previousPackId], references: [id], onDelete: SetNull)
+  nextPacks               CustomerConfirmationPack[]     @relation("PackVersionLineage")
+  generatedBy             User?                          @relation("ConfirmationPackGenerator", fields: [generatedById], references: [id], onDelete: SetNull)
+  items                   CustomerConfirmationPackItem[]
+  confirmations           CustomerConfirmation[]
+
+  @@unique([runId, versionNumber])
+  @@index([clientId, status])
+  @@index([runId, status])
+  @@map("customer_confirmation_packs")
+}
+
+model CustomerConfirmationPackItem {
+  id                String                               @id @default(cuid())
+  packId            String                               @map("pack_id")
+  clientId          String                               @map("client_id")
+  runId             String                               @map("run_id")
+  targetEmployeeId  String?                              @map("target_employee_id")
+  category          CustomerConfirmationPackItemCategory
+  status            CustomerConfirmationPackItemStatus   @default(OPEN)
+  sourceObjectType  String?                              @map("source_object_type")
+  sourceObjectId    String?                              @map("source_object_id")
+  targetField       String?                              @map("target_field")
+  title             String
+  detail            String                               @db.Text
+  riskLevel         AuditRiskLevel                       @default(R1) @map("risk_level")
+  isCritical        Boolean                              @default(false) @map("is_critical")
+  isSystemRequired  Boolean                              @default(false) @map("is_system_required")
+  coverageScopeType CoverageScopeType                    @default(MIXED) @map("coverage_scope_type")
+  coverageScope     Json                                 @default("{}") @map("coverage_scope")
+  evidenceRefs      String[]                             @default([]) @map("evidence_refs")
+  sortOrder         Int                                  @default(0) @map("sort_order")
+  handlingReason    String?                              @map("handling_reason") @db.Text
+  editedById        String?                              @map("edited_by_id")
+  createdAt         DateTime                             @default(now()) @map("created_at")
+  updatedAt         DateTime                             @updatedAt @map("updated_at")
+  pack              CustomerConfirmationPack             @relation(fields: [packId], references: [id], onDelete: Restrict)
+  client            Client                               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun        PayrollRun                           @relation(fields: [runId], references: [id], onDelete: Restrict)
+  targetEmployee    Employee?                            @relation("ConfirmationPackItemEmployee", fields: [targetEmployeeId], references: [id], onDelete: SetNull)
+  editedBy          User?                                @relation("ConfirmationPackItemEditor", fields: [editedById], references: [id], onDelete: SetNull)
+
+  @@index([packId, category])
+  @@index([runId, status])
+  @@index([sourceObjectType, sourceObjectId])
+  @@index([targetEmployeeId, targetField])
+  @@map("customer_confirmation_pack_items")
+}
+
+model CustomerConfirmation {
+  id                      String                     @id @default(cuid())
+  packId                  String                     @map("pack_id")
+  clientId                String                     @map("client_id")
+  runId                   String                     @map("run_id")
+  evidenceId              String?                    @map("evidence_id")
+  status                  CustomerConfirmationStatus @default(VALID)
+  coverageScopeType       CoverageScopeType          @map("coverage_scope_type")
+  coverageScope           Json                       @default("{}") @map("coverage_scope")
+  dataVersionRef          String                     @map("data_version_ref")
+  resultVersionRef        String?                    @map("result_version_ref")
+  exportPreviewVersionRef String?                    @map("export_preview_version_ref")
+  confirmationText        String                     @map("confirmation_text") @db.Text
+  confirmedByName         String?                    @map("confirmed_by_name")
+  backfilledById          String?                    @map("backfilled_by_id")
+  backfilledAt            DateTime                   @default(now()) @map("backfilled_at")
+  invalidatedAt           DateTime?                  @map("invalidated_at")
+  invalidationReason      String?                    @map("invalidation_reason")
+  createdAt               DateTime                   @default(now()) @map("created_at")
+  pack                    CustomerConfirmationPack   @relation(fields: [packId], references: [id], onDelete: Restrict)
+  client                  Client                     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun              PayrollRun                 @relation(fields: [runId], references: [id], onDelete: Restrict)
+  evidence                Evidence?                  @relation(fields: [evidenceId], references: [id], onDelete: Restrict)
+  backfilledBy            User?                      @relation("CustomerConfirmationBackfiller", fields: [backfilledById], references: [id], onDelete: SetNull)
+
+  @@index([packId, status])
+  @@index([runId, status])
+  @@index([evidenceId])
+  @@map("customer_confirmations")
+}
+
+model QuestionItem {
+  id                    String                @id @default(cuid())
+  clientId              String                @map("client_id")
+  runId                 String                @map("run_id")
+  rawInputItemId        String?               @map("raw_input_item_id")
+  changeProposalId      String?               @map("change_proposal_id")
+  source                QuestionSource        @default(MANUAL)
+  status                QuestionStatus        @default(PENDING)
+  riskLevel             AuditRiskLevel        @default(R1) @map("risk_level")
+  title                 String
+  detail                String                @db.Text
+  reason                String                @db.Text
+  impactSummary         String                @map("impact_summary")
+  targetObjectType      String?               @map("target_object_type")
+  targetObjectId        String?               @map("target_object_id")
+  targetField           String?               @map("target_field")
+  blockingIssueRef      String?               @map("blocking_issue_ref")
+  dueAt                 DateTime?             @map("due_at")
+  requiredEvidenceTypes String[]              @default([]) @map("required_evidence_types")
+  evidenceRefs          String[]              @default([]) @map("evidence_refs")
+  resolutionNote        String?               @map("resolution_note") @db.Text
+  createdById           String?               @map("created_by_id")
+  resolvedById          String?               @map("resolved_by_id")
+  closedById            String?               @map("closed_by_id")
+  resolvedAt            DateTime?             @map("resolved_at")
+  closedAt              DateTime?             @map("closed_at")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
+  client                Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun            PayrollRun            @relation(fields: [runId], references: [id], onDelete: Restrict)
+  rawInputItem          RawInputItem?         @relation(fields: [rawInputItemId], references: [id], onDelete: SetNull)
+  changeProposal        ChangeProposal?       @relation(fields: [changeProposalId], references: [id], onDelete: SetNull)
+  createdBy             User?                 @relation("QuestionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  resolvedBy            User?                 @relation("QuestionResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  closedBy              User?                 @relation("QuestionCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  statusEvents          QuestionStatusEvent[]
+
+  @@index([clientId, status])
+  @@index([runId, status])
+  @@index([rawInputItemId])
+  @@index([changeProposalId])
+  @@index([targetObjectType, targetObjectId])
+  @@map("question_items")
+}
+
+model QuestionStatusEvent {
+  id          String          @id @default(cuid())
+  questionId  String          @map("question_id")
+  fromStatus  QuestionStatus? @map("from_status")
+  toStatus    QuestionStatus  @map("to_status")
+  changedById String?         @map("changed_by_id")
+  evidenceId  String?         @map("evidence_id")
+  reason      String          @db.Text
+  createdAt   DateTime        @default(now()) @map("created_at")
+  question    QuestionItem    @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  changedBy   User?           @relation("QuestionStatusActor", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([questionId, createdAt])
+  @@index([toStatus, createdAt])
+  @@map("question_status_events")
 }
 
 model RegressionRun {

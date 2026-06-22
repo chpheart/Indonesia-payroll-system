@@ -6,6 +6,7 @@ import {
   assertPendingProposalStatus,
   assertRunWritable,
 } from "@/app/(app)/payroll-runs/[runId]/phase8-action-guards";
+import { invalidateCustomerConfirmationsForChange } from "@/app/(app)/payroll-runs/[runId]/phase9-confirmation-invalidation";
 import {
   evidenceList,
   jsonObjectValue,
@@ -132,7 +133,19 @@ export async function approveChangeProposalAction(formData: FormData) {
         reviewedAt,
       },
     });
-    await tx.auditLog.createMany({ data: reviewAuditEntries(proposal, ledgerEntry.id, updated.status, auditFields, body.reviewNote) });
+    await invalidateCustomerConfirmationsForChange(tx, {
+      clientId: proposal.clientId,
+      runId: proposal.runId,
+      targetEmployeeId: proposal.targetEmployeeId,
+      targetField: proposal.targetField,
+      dataVersionRef: formalObjectRef.formalObjectVersionRef,
+      riskLevel: proposal.riskLevel,
+      auditFields,
+      changedAt: reviewedAt,
+    });
+    await tx.auditLog.createMany({
+      data: reviewAuditEntries(proposal, ledgerEntry.id, updated.status, auditFields, body.reviewNote),
+    });
   });
   revalidatePath(`/payroll-runs/${body.runId}/changes`);
 }

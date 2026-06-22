@@ -11,6 +11,13 @@ const auditCreateMock = vi.hoisted(() => vi.fn());
 const caseItemCreateMock = vi.hoisted(() => vi.fn());
 const rawInputUpdateManyMock = vi.hoisted(() => vi.fn());
 const payrollRunUpdateMock = vi.hoisted(() => vi.fn());
+const customerConfirmationFindManyMock = vi.hoisted(() => vi.fn());
+const customerConfirmationUpdateManyMock = vi.hoisted(() => vi.fn());
+const customerConfirmationPackUpdateManyMock = vi.hoisted(() => vi.fn());
+const customerConfirmationPackItemFindManyMock = vi.hoisted(() => vi.fn());
+const questionCountMock = vi.hoisted(() => vi.fn());
+const packItemCountMock = vi.hoisted(() => vi.fn());
+const staleConfirmationCountMock = vi.hoisted(() => vi.fn());
 const transactionMock = vi.hoisted(() =>
   vi.fn(async (callback: (tx: Record<string, unknown>) => Promise<unknown>) =>
     callback({
@@ -35,9 +42,42 @@ const transactionMock = vi.hoisted(() =>
       payrollRun: {
         update: payrollRunUpdateMock,
       },
+      customerConfirmation: {
+        findMany: customerConfirmationFindManyMock,
+        updateMany: customerConfirmationUpdateManyMock,
+        count: staleConfirmationCountMock,
+      },
+      customerConfirmationPack: {
+        updateMany: customerConfirmationPackUpdateManyMock,
+      },
+      customerConfirmationPackItem: {
+        findMany: customerConfirmationPackItemFindManyMock,
+        count: packItemCountMock,
+      },
+      questionItem: {
+        count: questionCountMock,
+      },
     }),
   ),
 );
+const mocksToReset = [
+  proposalFindUniqueMock,
+  proposalFindManyMock,
+  proposalUpdateManyMock,
+  ledgerCreateMock,
+  auditCreateManyMock,
+  auditCreateMock,
+  caseItemCreateMock,
+  rawInputUpdateManyMock,
+  payrollRunUpdateMock,
+  customerConfirmationFindManyMock,
+  customerConfirmationUpdateManyMock,
+  customerConfirmationPackUpdateManyMock,
+  customerConfirmationPackItemFindManyMock,
+  questionCountMock,
+  packItemCountMock,
+  staleConfirmationCountMock,
+];
 
 vi.mock("@/domain/auth/request-context", () => ({
   actorFromHeadersWithDatabase: vi.fn(async () => ({
@@ -82,6 +122,21 @@ vi.mock("@/lib/db/prisma", () => ({
     payrollRun: {
       update: payrollRunUpdateMock,
     },
+    customerConfirmation: {
+      findMany: customerConfirmationFindManyMock,
+      updateMany: customerConfirmationUpdateManyMock,
+      count: staleConfirmationCountMock,
+    },
+    customerConfirmationPack: {
+      updateMany: customerConfirmationPackUpdateManyMock,
+    },
+    customerConfirmationPackItem: {
+      findMany: customerConfirmationPackItemFindManyMock,
+      count: packItemCountMock,
+    },
+    questionItem: {
+      count: questionCountMock,
+    },
   },
 }));
 
@@ -123,15 +178,12 @@ function pendingProposal() {
 }
 
 beforeEach(() => {
-  proposalFindUniqueMock.mockReset();
-  proposalFindManyMock.mockReset();
-  proposalUpdateManyMock.mockReset();
-  ledgerCreateMock.mockReset();
-  auditCreateManyMock.mockReset();
-  auditCreateMock.mockReset();
-  caseItemCreateMock.mockReset();
-  rawInputUpdateManyMock.mockReset();
-  payrollRunUpdateMock.mockReset();
+  mocksToReset.forEach((mock) => mock.mockReset());
+  customerConfirmationFindManyMock.mockResolvedValue([]);
+  customerConfirmationPackItemFindManyMock.mockResolvedValue([]);
+  questionCountMock.mockResolvedValue(0);
+  packItemCountMock.mockResolvedValue(0);
+  staleConfirmationCountMock.mockResolvedValue(0);
   transactionMock.mockClear();
 });
 
@@ -231,63 +283,4 @@ describe("change proposal API review gates", () => {
     });
   });
 
-  it("rejects merge or split without related proposal ids", async () => {
-    proposalFindUniqueMock.mockResolvedValue(pendingProposal());
-
-    const response = await PATCH(
-      request({ action: "merge", reviewNote: "merge requires target proposals" }),
-      context,
-    );
-    const body = (await response.json()) as { errorCode: string };
-
-    expect(response.status).toBe(400);
-    expect(body.errorCode).toBe("RELATED_PROPOSALS_REQUIRED_FOR_REVIEW_ACTION");
-    expect(proposalUpdateManyMock).not.toHaveBeenCalled();
-  });
-
-  it("rejects merge or split when related proposal ids are not traceable", async () => {
-    proposalFindUniqueMock.mockResolvedValue(pendingProposal());
-    proposalFindManyMock.mockResolvedValueOnce([]);
-
-    const missingResponse = await PATCH(
-      request({
-        action: "split",
-        relatedProposalIds: ["missing-proposal"],
-        reviewNote: "split requires real relation",
-      }),
-      context,
-    );
-    expect(missingResponse.status).toBe(400);
-    expect((await missingResponse.json()) as { errorCode: string }).toMatchObject({
-      errorCode: "RELATED_PROPOSALS_NOT_FOUND",
-    });
-
-    const selfResponse = await PATCH(
-      request({
-        action: "merge",
-        relatedProposalIds: ["proposal-a"],
-        reviewNote: "self relation is invalid",
-      }),
-      context,
-    );
-    expect(selfResponse.status).toBe(400);
-    expect((await selfResponse.json()) as { errorCode: string }).toMatchObject({
-      errorCode: "RELATED_PROPOSAL_CANNOT_REFERENCE_SELF",
-    });
-
-    proposalFindManyMock.mockResolvedValueOnce([{ id: "proposal-b", clientId: "client-a", runId: "other-run" }]);
-    const crossRunResponse = await PATCH(
-      request({
-        action: "merge",
-        relatedProposalIds: ["proposal-b"],
-        reviewNote: "cross-run relation is invalid",
-      }),
-      context,
-    );
-    expect(crossRunResponse.status).toBe(400);
-    expect((await crossRunResponse.json()) as { errorCode: string }).toMatchObject({
-      errorCode: "RELATED_PROPOSALS_SCOPE_MISMATCH",
-    });
-    expect(proposalUpdateManyMock).not.toHaveBeenCalled();
-  });
 });

@@ -145,7 +145,11 @@ export default async function PayrollRunDetailPage({ params }: PageProps) {
                           ? `/payroll-runs/${run.id}/changes`
                           : anchor === "mapping-confirmation" || anchor === "standardization"
                             ? `/payroll-runs/${run.id}/mappings`
-                        : `#${anchor}`
+                            : anchor === "evidence-questions"
+                              ? `/payroll-runs/${run.id}/evidence`
+                              : anchor === "customer-confirmation"
+                                ? `/payroll-runs/${run.id}/customer-confirmation`
+                                : `#${anchor}`
                   }
                   key={anchor}
                 >

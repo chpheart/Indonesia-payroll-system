@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { handleApi } from "@/app/api/_utils/errors";
+import { invalidateCustomerConfirmationsForChange } from "@/app/(app)/payroll-runs/[runId]/phase9-confirmation-invalidation";
 import { actorFromHeadersWithDatabase } from "@/domain/auth/request-context";
 import { assertClientActionAllowed } from "@/domain/auth/permissions";
 import {
@@ -237,6 +238,16 @@ export async function PATCH(request: NextRequest, { params }: RouteProps) {
           reviewNote: body.reviewNote,
           reviewedAt,
         },
+      });
+      await invalidateCustomerConfirmationsForChange(tx, {
+        clientId: proposal.clientId,
+        runId: proposal.runId,
+        targetEmployeeId: proposal.targetEmployeeId,
+        targetField: proposal.targetField,
+        dataVersionRef: formalObjectRef.formalObjectVersionRef,
+        riskLevel: proposal.riskLevel,
+        auditFields,
+        changedAt: reviewedAt,
       });
       await tx.auditLog.createMany({
         data: [

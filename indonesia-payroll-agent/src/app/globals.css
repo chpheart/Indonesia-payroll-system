@@ -279,12 +279,46 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .evidence-chip.missing { color: var(--danger); background: #fbeae8; }
 .sensitive-mask { color: var(--muted); background: var(--table-head); }
 .sensitive-mask strong { color: var(--foreground); }
+.phase9-layout { grid-template-columns: minmax(0, 1fr) 316px; }
+.phase9-form {
+  display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 10px;
+  padding: 14px 16px 16px;
+}
+.phase9-form.compact { grid-template-columns: repeat(4, minmax(120px, 1fr)); }
+.phase9-form textarea { grid-column: span 2; min-height: 82px; }
+.phase9-form button, .phase9-form .form-status { grid-column: 1 / -1; }
+.form-status { color: var(--muted); font-size: 12px; font-weight: 700; }
+.pack-message { padding: 14px 16px 16px; }
+.pack-message pre {
+  overflow: auto; border: 1px solid var(--border-soft); border-radius: 6px; padding: 12px;
+  background: #fafbfc; white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit;
+}
+.evidence-card-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 14px 16px 16px;
+}
+.evidence-card {
+  display: grid; gap: 10px; border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+  background: #fff; min-width: 0;
+}
+.evidence-card header { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.evidence-card header span:not(.evidence-chip) { color: var(--muted); font-size: 12px; }
+.evidence-card img {
+  width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border: 1px solid var(--border-soft);
+  border-radius: 6px; background: var(--table-head);
+}
+.evidence-card p { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.evidence-strip.inline {
+  display: flex; flex-wrap: wrap; border: 0; padding: 0; background: transparent;
+}
+.issue-list.padded { padding: 14px 16px 16px; }
 @media (max-width: 1200px) {
   .metric-grid, .control-grid { grid-template-columns: 1fr; }
   .filter-bar, .inline-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dashboard-grid, .run-layout, .risk-overview { grid-template-columns: 1fr; }
+  .dashboard-grid, .run-layout, .risk-overview, .phase9-layout { grid-template-columns: 1fr; }
   .task-panel, .approval-drawer { position: static; }
   .bottom-action-bar { left: 0; }
   .run-entry-grid, .run-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .file-meta-grid, .sheet-preview-grid, .file-upload-form, .intake-inline-form { grid-template-columns: 1fr; }
+  .phase9-form, .phase9-form.compact, .evidence-card-grid { grid-template-columns: 1fr; }
+  .phase9-form textarea { grid-column: 1; }
 }
