@@ -10,6 +10,10 @@ import {
 } from "@/domain/payroll-engine/engine-types";
 import { prisma } from "@/lib/db/prisma";
 
+type BpjsBillEmployeeItem = NonNullable<
+  NonNullable<PayrollEngineInput["postcheckContext"]>["bpjsBillEmployeeItems"]
+>[number];
+
 export type CalculationGate = {
   loadedPrecheck: LoadedPrecheck;
   resultVersionRef: string;
@@ -139,7 +143,11 @@ export async function loadCalculationInput(
     },
     postcheckContext: {
       previousTotals: previousRun ? previousTotals(previousRun.payrollResults) : undefined,
+      previousEmployeeResults: previousRun
+        ? previousEmployeeResults(previousRun.payrollResults)
+        : undefined,
       bpjsBillTotals: bpjsBillTotals(inputs),
+      bpjsBillEmployeeItems: bpjsBillEmployeeItems(inputs),
       exportPreviewEmployeeCount: numberInput(inputs, "exportPreviewEmployeeCount"),
     },
   };
@@ -193,6 +201,7 @@ function parseEmployeeFxOverrides(value: unknown): FXRateRef["employeeOverrides"
 }
 
 function previousTotals(results: {
+  employeeId?: string;
   grossPay: unknown;
   netPay: unknown;
   pph21: unknown;
@@ -210,6 +219,18 @@ function previousTotals(results: {
   };
 }
 
+function previousEmployeeResults(results: {
+  employeeId: string;
+  netPay: unknown;
+  pph21: unknown;
+}[]): NonNullable<PayrollEngineInput["postcheckContext"]>["previousEmployeeResults"] {
+  return results.map((result) => ({
+    employeeId: result.employeeId,
+    netPay: Number(result.netPay ?? 0),
+    pph21: Number(result.pph21 ?? 0),
+  }));
+}
+
 function bpjsBillTotals(inputs: { standardField: string; amount: unknown }[]) {
   const totals = {
     healthEmployee: numberInput(inputs, "bpjsBillHealthEmployeeTotal"),
@@ -218,6 +239,34 @@ function bpjsBillTotals(inputs: { standardField: string; amount: unknown }[]) {
     employmentEmployer: numberInput(inputs, "bpjsBillEmploymentEmployerTotal"),
   };
   return Object.values(totals).some((value) => value !== undefined) ? totals : undefined;
+}
+
+function bpjsBillEmployeeItems(inputs: {
+  employeeId: string | null;
+  standardField: string;
+  amount: unknown;
+  evidenceRefs: string[];
+}[]): NonNullable<PayrollEngineInput["postcheckContext"]>["bpjsBillEmployeeItems"] | undefined {
+  const items = new Map<string, BpjsBillEmployeeItem>();
+  const fieldMap = {
+    bpjsBillHealthEmployeeAmount: "healthEmployee",
+    bpjsBillEmploymentEmployeeAmount: "employmentEmployee",
+    bpjsBillHealthEmployerAmount: "healthEmployer",
+    bpjsBillEmploymentEmployerAmount: "employmentEmployer",
+  } as const;
+
+  for (const input of inputs) {
+    const target = fieldMap[input.standardField as keyof typeof fieldMap];
+    if (!target || !input.employeeId) continue;
+    const value = Number(input.amount ?? 0);
+    if (!Number.isFinite(value)) continue;
+    const current = items.get(input.employeeId) ?? { employeeId: input.employeeId, evidenceRefs: [] };
+    current[target] = value;
+    current.evidenceRefs = [...new Set([...(current.evidenceRefs ?? []), ...input.evidenceRefs])];
+    items.set(input.employeeId, current);
+  }
+
+  return items.size > 0 ? Array.from(items.values()) : undefined;
 }
 
 function numberInput(inputs: { standardField: string; amount: unknown }[], field: string) {

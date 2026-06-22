@@ -269,6 +269,8 @@ enum AuditAction {
   BLOCKING_ISSUE_RESOLVED
   PAYROLL_RESULT_CREATED
   CUSTOMER_COMPARISON_VALUE_RECORDED
+  PAYROLL_CONFIRMATION_PACKAGE_CREATED
+  PAYROLL_CONFIRMATION_PACKAGE_CONFIRMED
 
   @@map("audit_action")
 }
@@ -315,6 +317,10 @@ enum AuditObjectType {
   PAYROLL_RESULT_LINE
   CALCULATION_TRACE
   CUSTOMER_COMPARISON_VALUE
+  HIGH_RISK_ISSUE
+  RISK_APPROVAL
+  RECONCILIATION_CHECK
+  PAYROLL_CONFIRMATION_PACKAGE
 
   @@map("audit_object_type")
 }
@@ -817,6 +823,42 @@ enum CustomerComparisonValueStatus {
   @@map("customer_comparison_value_status")
 }
 
+enum HighRiskIssueStatus {
+  OPEN
+  APPROVED
+  REJECTED
+  VOIDED
+
+  @@map("high_risk_issue_status")
+}
+
+enum RiskApprovalDecision {
+  APPROVED
+  REJECTED
+  REVOKED
+
+  @@map("risk_approval_decision")
+}
+
+enum ReconciliationCheckStatus {
+  PASSED
+  WARNING
+  BLOCKED
+  NOT_COVERED
+
+  @@map("reconciliation_check_status")
+}
+
+enum PayrollConfirmationPackageStatus {
+  DRAFT
+  READY_FOR_REVIEW
+  CONFIRMED
+  LOCKED_SNAPSHOT
+  INVALIDATED
+
+  @@map("payroll_confirmation_package_status")
+}
+
 model User {
   id                      String                         @id @default(cuid())
   email                   String                         @unique
@@ -878,6 +920,9 @@ model User {
   precheckRuns            PrecheckRun[]                  @relation("PrecheckRunActor")
   resolvedBlockingIssues  BlockingIssue[]                @relation("BlockingIssueResolver")
   payrollResults          PayrollResult[]                @relation("PayrollResultCalculator")
+  riskApprovals           RiskApproval[]                 @relation("RiskApprovalApprover")
+  payrollConfirmationPacks PayrollConfirmationPackage[]   @relation("PayrollConfirmationPackageGenerator")
+  confirmedPayrollPackages PayrollConfirmationPackage[]   @relation("PayrollConfirmationPackageConfirmer")
 
   @@map("users")
 }
@@ -946,6 +991,10 @@ model Client {
   payrollResultLines            PayrollResultLine[]
   calculationTraces             CalculationTrace[]
   customerComparisonValues      CustomerComparisonValue[]
+  highRiskIssues                HighRiskIssue[]
+  riskApprovals                 RiskApproval[]
+  reconciliationChecks          ReconciliationCheck[]
+  payrollConfirmationPackages   PayrollConfirmationPackage[]
 
   @@map("clients")
 }
@@ -1063,6 +1112,8 @@ model Employee {
   payrollResultLines    PayrollResultLine[]            @relation("PayrollResultLineEmployee")
   calculationTraces     CalculationTrace[]             @relation("CalculationTraceEmployee")
   comparisonValues      CustomerComparisonValue[]      @relation("CustomerComparisonEmployee")
+  highRiskIssues        HighRiskIssue[]                @relation("HighRiskIssueEmployee")
+  reconciliationChecks  ReconciliationCheck[]          @relation("ReconciliationCheckEmployee")
 
   @@unique([clientId, employeeCode])
   @@index([clientId, status])
@@ -1143,6 +1194,10 @@ model PayrollRun {
   payrollResultLines               PayrollResultLine[]
   calculationTraces                CalculationTrace[]
   customerComparisonValues         CustomerComparisonValue[]
+  highRiskIssues                   HighRiskIssue[]
+  riskApprovals                    RiskApproval[]
+  reconciliationChecks             ReconciliationCheck[]
+  payrollConfirmationPackages      PayrollConfirmationPackage[]
 
   @@unique([clientId, payrollMonth])
   @@index([status, targetCompletionDate])
@@ -2121,6 +2176,8 @@ model PayrollResult {
   lines                  PayrollResultLine[]
   traces                 CalculationTrace[]
   blockingIssues         BlockingIssue[]
+  highRiskIssues         HighRiskIssue[]
+  reconciliationChecks   ReconciliationCheck[]
 
   @@unique([runId, employeeId, resultVersionRef])
   @@index([clientId, status])
@@ -2214,6 +2271,127 @@ model CustomerComparisonValue {
   @@index([employeeId, targetField])
   @@index([sourceInputId])
   @@map("customer_comparison_values")
+}
+
+model HighRiskIssue {
+  id               String              @id @default(cuid())
+  clientId         String              @map("client_id")
+  runId            String              @map("run_id")
+  payrollResultId  String?             @map("payroll_result_id")
+  targetEmployeeId String?             @map("target_employee_id")
+  issueType        String              @map("issue_type")
+  status           HighRiskIssueStatus @default(OPEN)
+  riskLevel        AuditRiskLevel      @default(R3) @map("risk_level")
+  targetObjectType String?             @map("target_object_type")
+  targetObjectId   String?             @map("target_object_id")
+  targetField      String?             @map("target_field")
+  title            String
+  detail           String              @db.Text
+  thresholdValue   Decimal?            @map("threshold_value") @db.Decimal(18, 2)
+  actualValue      Decimal?            @map("actual_value") @db.Decimal(18, 2)
+  deltaValue       Decimal?            @map("delta_value") @db.Decimal(18, 2)
+  evidenceRefs     String[]            @default([]) @map("evidence_refs")
+  sourceRefs       Json                @default("[]") @map("source_refs")
+  approvalReason   String?             @map("approval_reason") @db.Text
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  client           Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun       PayrollRun          @relation(fields: [runId], references: [id], onDelete: Restrict)
+  payrollResult    PayrollResult?      @relation(fields: [payrollResultId], references: [id], onDelete: SetNull)
+  targetEmployee   Employee?           @relation("HighRiskIssueEmployee", fields: [targetEmployeeId], references: [id], onDelete: SetNull)
+  approvals        RiskApproval[]
+
+  @@index([clientId, status])
+  @@index([runId, status])
+  @@index([targetEmployeeId, targetField])
+  @@index([issueType, riskLevel])
+  @@map("high_risk_issues")
+}
+
+model RiskApproval {
+  id              String               @id @default(cuid())
+  clientId        String               @map("client_id")
+  runId           String               @map("run_id")
+  issueId         String               @map("issue_id")
+  decision        RiskApprovalDecision
+  reason          String               @db.Text
+  approverRoleCodes String[]           @default([]) @map("approver_role_codes")
+  approvalSnapshot Json                @default("{}") @map("approval_snapshot")
+  approvedById    String?              @map("approved_by_id")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  client          Client               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun      PayrollRun           @relation(fields: [runId], references: [id], onDelete: Restrict)
+  issue           HighRiskIssue        @relation(fields: [issueId], references: [id], onDelete: Restrict)
+  approvedBy      User?                @relation("RiskApprovalApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([clientId, createdAt])
+  @@index([runId, decision])
+  @@index([issueId, createdAt])
+  @@map("risk_approvals")
+}
+
+model ReconciliationCheck {
+  id               String                    @id @default(cuid())
+  clientId         String                    @map("client_id")
+  runId            String                    @map("run_id")
+  payrollResultId  String?                   @map("payroll_result_id")
+  targetEmployeeId String?                   @map("target_employee_id")
+  resultVersionRef String?                   @map("result_version_ref")
+  checkType        String                    @map("check_type")
+  status           ReconciliationCheckStatus
+  riskLevel        AuditRiskLevel            @default(R1) @map("risk_level")
+  targetField      String?                   @map("target_field")
+  expectedValue    Decimal?                  @map("expected_value") @db.Decimal(18, 2)
+  actualValue      Decimal?                  @map("actual_value") @db.Decimal(18, 2)
+  deltaValue       Decimal?                  @map("delta_value") @db.Decimal(18, 2)
+  message          String
+  detail           String                    @db.Text
+  evidenceRefs     String[]                  @default([]) @map("evidence_refs")
+  sourceRefs       Json                      @default("[]") @map("source_refs")
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  client           Client                    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun       PayrollRun                @relation(fields: [runId], references: [id], onDelete: Restrict)
+  payrollResult    PayrollResult?            @relation(fields: [payrollResultId], references: [id], onDelete: SetNull)
+  targetEmployee   Employee?                 @relation("ReconciliationCheckEmployee", fields: [targetEmployeeId], references: [id], onDelete: SetNull)
+
+  @@index([clientId, status])
+  @@index([runId, status])
+  @@index([targetEmployeeId, targetField])
+  @@index([checkType, riskLevel])
+  @@map("reconciliation_checks")
+}
+
+model PayrollConfirmationPackage {
+  id                    String                           @id @default(cuid())
+  clientId              String                           @map("client_id")
+  runId                 String                           @map("run_id")
+  versionNumber         Int                              @map("version_number")
+  status                PayrollConfirmationPackageStatus @default(DRAFT)
+  resultVersionRef      String                           @map("result_version_ref")
+  sourceSnapshot        Json                             @default("{}") @map("source_snapshot")
+  summary               Json                             @default("{}")
+  drilldown             Json                             @default("{}")
+  gateSnapshot          Json                             @default("{}") @map("gate_snapshot")
+  previewDiff           Json                             @default("{}") @map("preview_diff")
+  auditEntryRefs        String[]                         @default([]) @map("audit_entry_refs")
+  invalidationReason    String?                          @map("invalidation_reason") @db.Text
+  generatedById         String?                          @map("generated_by_id")
+  confirmedById         String?                          @map("confirmed_by_id")
+  generatedAt           DateTime                         @default(now()) @map("generated_at")
+  confirmedAt           DateTime?                        @map("confirmed_at")
+  invalidatedAt         DateTime?                        @map("invalidated_at")
+  createdAt             DateTime                         @default(now()) @map("created_at")
+  updatedAt             DateTime                         @updatedAt @map("updated_at")
+  client                Client                           @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun            PayrollRun                       @relation(fields: [runId], references: [id], onDelete: Restrict)
+  generatedBy           User?                            @relation("PayrollConfirmationPackageGenerator", fields: [generatedById], references: [id], onDelete: SetNull)
+  confirmedBy           User?                            @relation("PayrollConfirmationPackageConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+
+  @@unique([runId, versionNumber])
+  @@index([clientId, status])
+  @@index([runId, status])
+  @@index([resultVersionRef])
+  @@map("payroll_confirmation_packages")
 }
 
 model RegressionRun {

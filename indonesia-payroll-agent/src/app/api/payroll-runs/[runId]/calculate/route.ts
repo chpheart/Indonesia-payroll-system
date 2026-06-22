@@ -14,6 +14,8 @@ import { actorFromHeadersWithDatabase } from "@/domain/auth/request-context";
 import { assertClientActionAllowed } from "@/domain/auth/permissions";
 import { calculatePayroll } from "@/domain/payroll-engine/engine";
 import { evaluatePostCalculation } from "@/domain/payroll-engine/postcheck";
+import { evaluatePayrollReconciliation } from "@/domain/reconciliation/reconciliation-service";
+import { buildHighRiskIssues } from "@/domain/risks/risk-service";
 import { requestAuditFields } from "@/lib/audit/request-audit-fields";
 import { prisma } from "@/lib/db/prisma";
 
@@ -42,6 +44,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const calculation = await runCalculationFailClosed(gate, auditFields);
     const { engineInput, output } = calculation;
     const postcheck = evaluatePostCalculation(engineInput, output);
+    const reconciliation = evaluatePayrollReconciliation(engineInput, output);
+    const highRiskIssues = buildHighRiskIssues(reconciliation.highRiskSignals);
 
     if (postcheck.status === "BLOCKED") {
       await prisma.$transaction((tx) =>
@@ -55,7 +59,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     await prisma.$transaction((tx) =>
-      persistPayrollCalculation(tx, gate.loadedPrecheck.run, output, auditFields),
+      persistPayrollCalculation(
+        tx,
+        gate.loadedPrecheck.run,
+        output,
+        reconciliation,
+        highRiskIssues,
+        auditFields,
+      ),
     );
 
     return NextResponse.json({
@@ -67,6 +78,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         0,
       ),
       postcheck: postcheck.checks,
+      reconciliation: reconciliation.checks,
+      highRiskIssueCount: highRiskIssues.length,
     }, { status: 201 });
   });
 }

@@ -78,6 +78,14 @@ export async function loadRunDetail(actor: ActorContext, runId: string) {
             _count: { select: { lines: true, traces: true } },
           },
         },
+        reconciliationChecks: {
+          where: { status: "BLOCKED" },
+          select: { id: true },
+        },
+        payrollConfirmationPackages: {
+          where: { status: "READY_FOR_REVIEW" },
+          select: { id: true, resultVersionRef: true },
+        },
       },
     });
 

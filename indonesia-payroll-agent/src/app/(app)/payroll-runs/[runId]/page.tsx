@@ -7,6 +7,7 @@ import {
 } from "@/app/(app)/payroll-runs/actions";
 import { formatShortDate, STATUS_LABELS, statusClass } from "@/app/(app)/payroll-runs/dashboard-data";
 import { loadRunDetail } from "@/app/(app)/payroll-runs/[runId]/detail-data";
+import { canAdvanceToNext } from "@/app/(app)/payroll-runs/[runId]/run-detail-gates";
 import { ENTRY_POINTS } from "@/app/(app)/payroll-runs/[runId]/run-entry-points";
 import { currentActor } from "@/app/(app)/server-actor";
 import { ApprovalDrawer } from "@/components/approval-drawer";
@@ -22,50 +23,6 @@ type PageProps = {
   params: Promise<{ runId: string }>;
 };
 
-function canAdvanceToNext({
-  nextStatus,
-  blockingIssueCount,
-  highRiskIssueCount,
-  pendingCustomerConfirmationCount,
-  payrollResultCount,
-  calculationTraceCount,
-}: {
-  nextStatus: string | null;
-  blockingIssueCount: number;
-  highRiskIssueCount: number;
-  pendingCustomerConfirmationCount: number;
-  payrollResultCount: number;
-  calculationTraceCount: number;
-}) {
-  if (!nextStatus) {
-    return false;
-  }
-
-  if (nextStatus === "LOCKED") {
-    return (
-      blockingIssueCount === 0 &&
-      highRiskIssueCount === 0 &&
-      pendingCustomerConfirmationCount === 0 &&
-      payrollResultCount > 0 &&
-      calculationTraceCount > 0
-    );
-  }
-
-  if (nextStatus === "PENDING_CALCULATION") {
-    return blockingIssueCount === 0;
-  }
-
-  if (nextStatus === "PENDING_PRECHECK") {
-    return pendingCustomerConfirmationCount === 0;
-  }
-
-  if (nextStatus === "PENDING_PAYROLL_CONFIRMATION") {
-    return highRiskIssueCount === 0 && payrollResultCount > 0 && calculationTraceCount > 0;
-  }
-
-  return true;
-}
-
 export default async function PayrollRunDetailPage({ params }: PageProps) {
   const actor = await currentActor();
   const { runId } = await params;
@@ -80,6 +37,9 @@ export default async function PayrollRunDetailPage({ params }: PageProps) {
   }
 
   const latestResultVersion = run.payrollResults[0]?.resultVersionRef;
+  const readyConfirmationPackageCount = latestResultVersion
+    ? run.payrollConfirmationPackages.filter((pack) => pack.resultVersionRef === latestResultVersion).length
+    : 0;
   const traceCount = run.payrollResults.reduce((count, result) => count + result._count.traces, 0);
   const resultLineCount = run.payrollResults.reduce((count, result) => count + result._count.lines, 0);
   const canAdvance = canAdvanceToNext({
@@ -89,6 +49,8 @@ export default async function PayrollRunDetailPage({ params }: PageProps) {
     pendingCustomerConfirmationCount: run.pendingCustomerConfirmationCount,
     payrollResultCount: run.payrollResults.length,
     calculationTraceCount: traceCount,
+    blockedReconciliationCheckCount: run.reconciliationChecks.length,
+    readyPayrollConfirmationPackageCount: readyConfirmationPackageCount,
   });
   const calculationTraceLines = run.payrollResults.length > 0
     ? [
@@ -171,6 +133,8 @@ export default async function PayrollRunDetailPage({ params }: PageProps) {
                               ? `/payroll-runs/${run.id}/evidence`
                               : anchor === "customer-confirmation"
                                 ? `/payroll-runs/${run.id}/customer-confirmation`
+                                : anchor === "payroll-confirmation"
+                                  ? `/payroll-runs/${run.id}/confirmation`
                                 : `#${anchor}`
                   }
                   key={anchor}
@@ -254,6 +218,7 @@ export default async function PayrollRunDetailPage({ params }: PageProps) {
             `${run.client.code} · ${run.payrollMonth}`,
             `阻断 ${run.blockingIssueCount} · 高风险 ${run.highRiskIssueCount}`,
             "锁定后只能通过 Correction Run 修正历史结果",
+            `当前结果确认包 ${readyConfirmationPackageCount} · 阻断核查 ${run.reconciliationChecks.length}`,
           ]}
           reason="高影响动作必须展示预览、差异和业务理由；当前抽屉只显示门禁，不静默执行。"
         />

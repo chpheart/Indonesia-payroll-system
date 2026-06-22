@@ -87,6 +87,19 @@ export type PayrollEngineInput = {
       healthEmployer?: number;
       employmentEmployer?: number;
     };
+    bpjsBillEmployeeItems?: {
+      employeeId: string;
+      healthEmployee?: number;
+      employmentEmployee?: number;
+      healthEmployer?: number;
+      employmentEmployer?: number;
+      evidenceRefs?: string[];
+    }[];
+    previousEmployeeResults?: {
+      employeeId: string;
+      netPay: number;
+      pph21: number;
+    }[];
     exportPreviewEmployeeCount?: number;
   };
 };

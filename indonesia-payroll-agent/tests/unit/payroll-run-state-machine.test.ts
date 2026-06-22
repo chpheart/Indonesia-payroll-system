@@ -11,6 +11,8 @@ const clearGates = {
   pendingCustomerConfirmationCount: 0,
   payrollResultCount: 1,
   calculationTraceCount: 5,
+  blockedReconciliationCheckCount: 0,
+  readyPayrollConfirmationPackageCount: 1,
 };
 
 describe("payroll run state machine", () => {
@@ -91,6 +93,22 @@ describe("payroll run state machine", () => {
         calculationTraceCount: 0,
       }),
     ).toThrow("PAYROLL_RUN_CALCULATION_RESULT_REQUIRED");
+  });
+
+  it("requires a ready confirmation package and passing reconciliation before lock", () => {
+    expect(() =>
+      assertValidRunTransition("PENDING_PAYROLL_CONFIRMATION", "LOCKED", {
+        ...clearGates,
+        readyPayrollConfirmationPackageCount: 0,
+      }),
+    ).toThrow("PAYROLL_CONFIRMATION_PACKAGE_REQUIRED");
+
+    expect(() =>
+      assertValidRunTransition("PENDING_PAYROLL_CONFIRMATION", "LOCKED", {
+        ...clearGates,
+        blockedReconciliationCheckCount: 1,
+      }),
+    ).toThrow("PAYROLL_RUN_RECONCILIATION_MUST_PASS");
   });
 
   it("allows lock only when all gates are clear", () => {

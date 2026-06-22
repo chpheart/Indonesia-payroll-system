@@ -21,6 +21,7 @@ import {
   invalidateRunPrecheckUpdate,
 } from "@/app/(app)/payroll-runs/precheck-snapshot";
 import { statusUpdateData } from "@/app/(app)/payroll-runs/status-write";
+import { runGateCountsForTransition } from "@/app/(app)/payroll-runs/transition-gates";
 import { prisma } from "@/lib/db/prisma";
 
 const createRunSchema = z.object({
@@ -220,22 +221,6 @@ export async function transitionPayrollRunAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/payroll-runs");
   revalidatePath(`/payroll-runs/${run.id}`);
-}
-
-async function runGateCountsForTransition<T extends { id: string }>(
-  run: T,
-  toStatus: string,
-) {
-  if (toStatus !== "PENDING_PAYROLL_CONFIRMATION" && toStatus !== "LOCKED") {
-    return run;
-  }
-  const [payrollResultCount, calculationTraceCount] = await Promise.all([
-    prisma.payrollResult.count({ where: { runId: run.id, status: "FINAL" } }),
-    prisma.calculationTrace.count({
-      where: { runId: run.id, result: { status: "FINAL" } },
-    }),
-  ]);
-  return { ...run, payrollResultCount, calculationTraceCount };
 }
 
 export async function impactRollbackPayrollRunAction(formData: FormData) {

@@ -1,6 +1,7 @@
 import { canPerformClientAction, type ActorContext } from "@/domain/auth/permissions";
 import {
   employeeWithoutCalculablePayrollInputCount,
+  grossUpOverrideEmployeeCount,
   isGrossUpOverrideInput,
   isNetPayModeInput,
   netPayModeWithoutGrossUpEmployeeCount,
@@ -51,7 +52,7 @@ export async function loadPayrollPrecheck(runId: string, actor: ActorContext): P
   });
   if (!run) throw new Error("PAYROLL_RUN_NOT_FOUND");
 
-  const [rules, clientConfig, pendingProposalCount, approvedNoLedgerCount, mappingCount, inputs, confirmedFxRates, unconfirmedFxRates, latestPack, openBlockingIssueCount] = await Promise.all([
+  const [rules, clientConfig, pendingProposalCount, approvedNoLedgerCount, mappingCount, lowConfidenceMappingCount, actorMaintainedKeyDataCount, inputs, confirmedFxRates, unconfirmedFxRates, latestPack, openBlockingIssueCount] = await Promise.all([
     prisma.ruleVersion.findMany({
       where: {
         status: "PUBLISHED",
@@ -71,6 +72,10 @@ export async function loadPayrollPrecheck(runId: string, actor: ActorContext): P
       where: { runId, status: { in: ["APPROVED", "APPROVED_WITH_MODIFICATION"] }, ledgerEntry: null },
     }),
     prisma.fieldMappingVersion.count({ where: { runId, status: "CONFIRMED" } }),
+    prisma.fieldMappingVersion.count({
+      where: { runId, status: "CONFIRMED", confidence: { in: ["LOW", "MEDIUM", "CONFLICT"] } },
+    }),
+    keyDataMaintainedByActorCount(runId, actor.id),
     prisma.standardizedPayrollInput.findMany({
       where: { runId },
       select: {
@@ -138,6 +143,19 @@ export async function loadPayrollPrecheck(runId: string, actor: ActorContext): P
       confirmedInputs,
       clientConfig?.grossUpDefault ?? false,
     ),
+    grossUpEmployeeCount: grossUpOverrideEmployeeCount(confirmedInputs),
+    foreignCurrencyEmployeeCount: new Set(
+      confirmedInputs
+        .filter((input) => input.currencyCode.toUpperCase() !== "IDR")
+        .map((input) => input.employeeId)
+        .filter(Boolean),
+    ).size,
+    customerTotalOnlyInputCount: confirmedInputs.filter((input) =>
+      ["customerTotalGrossPay", "customerTotalOnlyPay", "customerGrossTotalOnly"].includes(input.standardField),
+    ).length,
+    lowConfidenceMappingCount,
+    templateStructureRiskCount: numberInput(confirmedInputs, "exportPreviewEmployeeCount") === undefined ? 1 : 0,
+    segregationOfDutyRiskCount: actorMaintainedKeyDataCount > 0 ? 1 : 0,
     requiredFxCurrencies: [...new Set(confirmedInputs.map((input) => input.currencyCode.toUpperCase()).filter((currency) => currency !== "IDR"))],
     confirmedFxCurrencies: [...new Set(confirmedFxRates.map((rate) => rate.currencyCode.toUpperCase()))],
     unconfirmedFxCurrencies: [...new Set(unconfirmedFxRates.map((rate) => rate.currencyCode.toUpperCase()))],
@@ -178,6 +196,10 @@ export async function persistPayrollPrecheck(
     where: { runId: loaded.run.id, source: "PRECHECK", status: "OPEN" },
     data: { status: "RESOLVED", resolutionNote: "被新的预检查运行替代", resolvedById: auditFields.actorUserId, resolvedAt: createdAt },
   });
+  await tx.highRiskIssue.updateMany({
+    where: { runId: loaded.run.id, status: "OPEN", targetObjectType: "PRECHECK_RUN" },
+    data: { status: "VOIDED", approvalReason: "被新的预检查运行替代" },
+  });
   const precheck = await tx.precheckRun.create({
     data: {
       clientId: loaded.run.clientId,
@@ -209,7 +231,28 @@ export async function persistPayrollPrecheck(
       })),
     });
   }
+  if (loaded.evaluation.highRiskIssues.length > 0) {
+    await tx.highRiskIssue.createMany({
+      data: loaded.evaluation.highRiskIssues.map((issue) => ({
+        clientId: loaded.run.clientId,
+        runId: loaded.run.id,
+        issueType: issue.issueType,
+        status: "OPEN",
+        riskLevel: issue.riskLevel,
+        targetObjectType: issue.targetObjectType ?? "PRECHECK_RUN",
+        targetObjectId: issue.targetObjectId ?? precheck.id,
+        targetEmployeeId: issue.targetEmployeeId,
+        targetField: issue.targetField,
+        title: issue.title,
+        detail: issue.detail,
+        evidenceRefs: issue.evidenceRefs,
+      })),
+    });
+  }
   const openBlockingIssueCount = await tx.blockingIssue.count({
+    where: { runId: loaded.run.id, status: "OPEN" },
+  });
+  const openHighRiskIssueCount = await tx.highRiskIssue.count({
     where: { runId: loaded.run.id, status: "OPEN" },
   });
   await tx.payrollRun.update({
@@ -224,6 +267,7 @@ export async function persistPayrollPrecheck(
         issueCount: openBlockingIssueCount,
       }),
       blockingIssueCount: openBlockingIssueCount,
+      highRiskIssueCount: openHighRiskIssueCount,
     },
   });
   await tx.auditLog.create({
@@ -238,11 +282,30 @@ export async function persistPayrollPrecheck(
       metadata: {
         status: loaded.evaluation.status,
         issueCount: loaded.evaluation.issues.length,
+        highRiskIssueCount: loaded.evaluation.highRiskIssues.length,
         blockedGates: loaded.evaluation.gates.filter((gate) => gate.status === "BLOCKED").map((gate) => gate.code),
       },
     },
   });
   return precheck;
+}
+
+async function keyDataMaintainedByActorCount(runId: string, actorId: string) {
+  const [ledger, mappings, inputs] = await Promise.all([
+    prisma.changeLedgerEntry.count({ where: { runId, reviewedById: actorId } }),
+    prisma.fieldMappingVersion.count({ where: { runId, confirmedById: actorId } }),
+    prisma.standardizedPayrollInput.count({
+      where: { runId, OR: [{ confirmedById: actorId }, { modifiedById: actorId }] },
+    }),
+  ]);
+  return ledger + mappings + inputs;
+}
+
+function numberInput(inputs: { standardField: string; amount: unknown }[], field: string) {
+  const amount = inputs.find((input) => input.standardField === field)?.amount;
+  if (amount === null || amount === undefined) return undefined;
+  const value = Number(amount);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function uniqueRuleTypes(values: string[]) {

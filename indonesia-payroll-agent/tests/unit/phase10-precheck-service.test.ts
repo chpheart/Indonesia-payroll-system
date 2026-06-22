@@ -96,6 +96,19 @@ describe("phase 10 payroll precheck service", () => {
       "CALCULABLE_PAYROLL_INPUT_REQUIRED",
     );
   });
+
+  it("separates high risk candidates from blocking issues before calculation", () => {
+    const result = evaluatePayrollPrecheck(snapshot({
+      grossUpEmployeeCount: 1,
+      lowConfidenceMappingCount: 1,
+    }));
+
+    expect(result.status).toBe("PASSED");
+    expect(result.issues).toHaveLength(0);
+    expect(result.highRiskIssues.map((issue) => issue.issueType)).toEqual(
+      expect.arrayContaining(["GROSS_UP", "LOW_CONFIDENCE_MAPPING"]),
+    );
+  });
 });
 
 function snapshot(overrides: Partial<PrecheckSnapshot> = {}): PrecheckSnapshot {

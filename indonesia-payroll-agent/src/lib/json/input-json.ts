@@ -11,6 +11,10 @@ export function toInputJsonArray(value: unknown[]): Prisma.InputJsonArray {
 }
 
 export function toInputJsonValue(value: unknown): Prisma.InputJsonValue | null {
+  if (value === undefined) {
+    return null;
+  }
+
   if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return value;
   }

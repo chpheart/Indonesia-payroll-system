@@ -39,6 +39,8 @@ export type RunGateCounts = {
   pendingCustomerConfirmationCount: number;
   payrollResultCount?: number;
   calculationTraceCount?: number;
+  blockedReconciliationCheckCount?: number;
+  readyPayrollConfirmationPackageCount?: number;
 };
 
 const STATUS_ORDER: Record<PayrollRunStatus, number> = {
@@ -92,6 +94,7 @@ export function assertValidRunTransition(
 
   if (toStatus === "LOCKED") {
     assertRunCanLock(gates);
+    assertPayrollConfirmationPackageReady(gates);
   }
 
   if (toStatus === "PENDING_PAYROLL_CONFIRMATION" || toStatus === "LOCKED") {
@@ -128,6 +131,16 @@ export function assertRunCanLock(gates: RunGateCounts): void {
 function assertRunHasCalculationArtifacts(gates: RunGateCounts): void {
   if ((gates.payrollResultCount ?? 0) <= 0 || (gates.calculationTraceCount ?? 0) <= 0) {
     throw new RunStateMachineError("PAYROLL_RUN_CALCULATION_RESULT_REQUIRED");
+  }
+}
+
+function assertPayrollConfirmationPackageReady(gates: RunGateCounts): void {
+  if ((gates.blockedReconciliationCheckCount ?? 0) > 0) {
+    throw new RunStateMachineError("PAYROLL_RUN_RECONCILIATION_MUST_PASS");
+  }
+
+  if ((gates.readyPayrollConfirmationPackageCount ?? 0) <= 0) {
+    throw new RunStateMachineError("PAYROLL_CONFIRMATION_PACKAGE_REQUIRED");
   }
 }
 

@@ -5,8 +5,15 @@ import {
 import { type PostCalculationEvaluation } from "@/domain/payroll-engine/postcheck";
 import { assertTraceSetComplete } from "@/domain/payroll-engine/trace-completeness";
 import { PAYROLL_RUN_STATUSES, type PayrollRunStatus } from "@/domain/payroll-runs/run-state-machine";
+import { type ReconciliationEvaluation } from "@/domain/reconciliation/reconciliation-service";
+import { type HighRiskIssueDraft } from "@/domain/risks/risk-service";
 import { type Prisma } from "@/generated/prisma/client";
 import { toInputJsonArray, toInputJsonObject } from "@/lib/json/input-json";
+import {
+  persistHighRiskIssues,
+  persistReconciliationChecks,
+  resetPhase11CalculationArtifacts,
+} from "./calculation-phase11-persistence";
 
 type AuditFields = {
   actorUserId?: string;
@@ -26,34 +33,54 @@ export async function persistPayrollCalculation(
   tx: Prisma.TransactionClient,
   run: RunForPersistence,
   output: PayrollEngineOutput,
+  reconciliation: ReconciliationEvaluation,
+  highRiskIssues: HighRiskIssueDraft[],
   auditFields: AuditFields,
 ) {
   await tx.payrollResult.updateMany({
     where: { runId: run.id, status: "FINAL" },
     data: { status: "INVALIDATED", invalidatedAt: new Date() },
   });
+  await resetPhase11CalculationArtifacts(tx, run);
 
   for (const result of output.results) {
     await createPayrollResult(tx, run, result, auditFields);
   }
+  await persistReconciliationChecks(tx, run, output.resultVersionRef, reconciliation);
+  await persistHighRiskIssues(tx, run, highRiskIssues);
+  const openHighRiskIssueCount = await tx.highRiskIssue.count({
+    where: { runId: run.id, status: "OPEN" },
+  });
+  const nextStatus = openHighRiskIssueCount > 0
+    ? "PENDING_HIGH_RISK_RELEASE"
+    : "PENDING_PAYROLL_CONFIRMATION";
 
   await tx.payrollRun.update({
     where: { id: run.id },
     data: {
-      status: "PENDING_PAYROLL_CONFIRMATION",
-      statusReason: "Phase 10 calculation completed",
+      status: nextStatus,
+      statusReason: openHighRiskIssueCount > 0
+        ? "Phase 11 high risk release required before payroll confirmation"
+        : "Phase 11 reconciliation completed",
       blockingIssueCount: 0,
+      highRiskIssueCount: openHighRiskIssueCount,
     },
   });
   await tx.runStatusEvent.create({
     data: {
       runId: run.id,
       fromStatus: statusForEvent(run.status),
-      toStatus: "PENDING_PAYROLL_CONFIRMATION",
+      toStatus: nextStatus,
       sourceType: "PAYROLL_RESULT",
-      reason: "Phase 10 calculation completed",
+      reason: openHighRiskIssueCount > 0
+        ? "Phase 11 reconciliation created high risk release gate"
+        : "Phase 11 reconciliation completed without open high risk",
       triggeredById: auditFields.actorUserId,
-      metadata: { resultVersionRef: output.resultVersionRef },
+      metadata: {
+        resultVersionRef: output.resultVersionRef,
+        reconciliationCheckCount: reconciliation.checks.length,
+        highRiskIssueCount: openHighRiskIssueCount,
+      },
     },
   });
 }

@@ -67,6 +67,16 @@ export function netPayModeWithoutGrossUpEmployeeCount(
   return Array.from(byEmployee.values()).filter((item) => item.hasNetPayMode && !item.hasGrossUpOverride).length;
 }
 
+export function grossUpOverrideEmployeeCount(
+  inputs: { employeeId: string | null; standardField: string; value: unknown }[],
+) {
+  return new Set(
+    inputs
+      .filter((input) => input.employeeId && isGrossUpOverrideInput(input))
+      .map((input) => input.employeeId),
+  ).size;
+}
+
 function isCalculablePayrollInput(input: PrecheckInputForGate) {
   if (isCustomerComparisonInput(input) || input.amount === null || input.amount === undefined) {
     return false;

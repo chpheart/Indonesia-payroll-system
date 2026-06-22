@@ -21,6 +21,7 @@ export type PrecheckGateCode =
   | "gross_up_mode"
   | "customer_confirmation"
   | "fx_rates"
+  | "high_risk_candidates"
   | "blocking_issues";
 
 export type PrecheckGateResult = {
@@ -33,6 +34,18 @@ export type PrecheckGateResult = {
 export type PrecheckBlockingIssueDraft = {
   issueType: string;
   riskLevel: "R1" | "R2" | "R3" | "R4";
+  targetObjectType?: string;
+  targetObjectId?: string;
+  targetEmployeeId?: string;
+  targetField?: string;
+  title: string;
+  detail: string;
+  evidenceRefs: string[];
+};
+
+export type PrecheckHighRiskIssueDraft = {
+  issueType: string;
+  riskLevel: "R3" | "R4";
   targetObjectType?: string;
   targetObjectId?: string;
   targetEmployeeId?: string;
@@ -70,6 +83,13 @@ export type PrecheckSnapshot = {
   requiredFxCurrencies: string[];
   confirmedFxCurrencies: string[];
   unconfirmedFxCurrencies: string[];
+  employeeMasterCriticalChangeCount?: number;
+  grossUpEmployeeCount?: number;
+  foreignCurrencyEmployeeCount?: number;
+  customerTotalOnlyInputCount?: number;
+  lowConfidenceMappingCount?: number;
+  templateStructureRiskCount?: number;
+  segregationOfDutyRiskCount?: number;
   latestCustomerConfirmationPack?: {
     id: string;
     status: string;
@@ -81,6 +101,7 @@ export type PrecheckEvaluation = {
   status: PrecheckRunStatus;
   gates: PrecheckGateResult[];
   issues: PrecheckBlockingIssueDraft[];
+  highRiskIssues: PrecheckHighRiskIssueDraft[];
 };
 
 const HISTORY_STATUSES = new Set(["LOCKED", "EXPORTED", "ARCHIVED", "VOIDED", "CORRECTED"]);
@@ -89,6 +110,7 @@ const CLOSED_CUSTOMER_CONFIRMATION_PACK_STATUSES = new Set(["CONFIRMED"]);
 export function evaluatePayrollPrecheck(snapshot: PrecheckSnapshot): PrecheckEvaluation {
   const gates: PrecheckGateResult[] = [];
   const issues: PrecheckBlockingIssueDraft[] = [];
+  const highRiskIssues: PrecheckHighRiskIssueDraft[] = [];
   checkRun(snapshot, gates, issues);
   checkPermission(snapshot, gates, issues);
   checkRules(snapshot, gates, issues);
@@ -99,12 +121,14 @@ export function evaluatePayrollPrecheck(snapshot: PrecheckSnapshot): PrecheckEva
   checkGrossUpMode(snapshot, gates, issues);
   checkCustomerConfirmation(snapshot, gates, issues);
   checkFxRates(snapshot, gates, issues);
+  checkHighRiskCandidates(snapshot, gates, highRiskIssues);
   checkOpenBlockers(snapshot, gates, issues);
 
   return {
     status: issues.length === 0 ? "PASSED" : "BLOCKED",
     gates,
     issues,
+    highRiskIssues,
   };
 }
 
@@ -263,3 +287,4 @@ function issue(
 ): PrecheckBlockingIssueDraft {
   return { issueType, riskLevel, title, detail, evidenceRefs: [], ...extra };
 }
+import { checkHighRiskCandidates } from "@/domain/prechecks/precheck-high-risk";

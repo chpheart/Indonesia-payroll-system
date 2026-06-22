@@ -52,7 +52,7 @@ describe("phase 10 post calculation checks", () => {
     );
   });
 
-  it("blocks when customer comparison values differ from deterministic results", () => {
+  it("keeps customer comparison values out of hard postcheck blockers", () => {
     const input = basePayrollInput();
     const output = calculatePayroll(input);
     output.results[0].comparisonValues.push({
@@ -69,10 +69,14 @@ describe("phase 10 post calculation checks", () => {
 
     const result = evaluatePostCalculation(input, output);
 
-    expect(result.status).toBe("BLOCKED");
-    expect(result.issues.map((issue) => issue.issueType)).toContain(
+    expect(result.status).toBe("PASSED");
+    expect(result.issues.map((issue) => issue.issueType)).not.toContain(
       "POSTCHECK_CUSTOMER_COMPARISON_DIFF",
     );
+    expect(result.checks.find((check) => check.code === "customer_comparison")).toMatchObject({
+      status: "PASSED",
+      evidence: { diffCount: 1 },
+    });
   });
 
   it("blocks zero payroll results that have no payable or taxable line evidence", () => {

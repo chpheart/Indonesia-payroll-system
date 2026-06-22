@@ -36,9 +36,9 @@ export function evaluatePostCalculation(
   const issues: PostCalculationIssue[] = [];
   checkHeadcount(input, output, checks, issues);
   checkEmployeeResults(output, checks, issues);
-  checkCustomerComparison(output, checks, issues);
-  checkHistoricalComparison(input, output, checks, issues);
-  checkBpjsBill(input, output, checks, issues);
+  checkCustomerComparison(output, checks);
+  checkHistoricalComparison(input, output, checks);
+  checkBpjsBill(input, output, checks);
   checkExportPreview(input, output, checks, issues);
 
   return { status: issues.length === 0 ? "PASSED" : "BLOCKED", checks, issues };
@@ -107,28 +107,19 @@ function isCalculablePayrollLine(line: PayrollEngineOutput["results"][number]["l
 function checkCustomerComparison(
   output: PayrollEngineOutput,
   checks: PostCalculationCheck[],
-  issues: PostCalculationIssue[],
 ) {
   const comparisons = output.results.flatMap((result) => result.comparisonValues);
   const diffs = comparisons.filter((item) => item.status === "DIFF");
-  const ok = diffs.length === 0;
-  checks.push(check("customer_comparison", ok, "客户计算值只作为对照差异；有差异时必须人工复核，不能覆盖系统结果。", {
+  checks.push(check("customer_comparison", true, "客户计算值差异交给 Phase 11 核查/高风险分层，不能覆盖系统结果。", {
     comparisonValueCount: comparisons.length,
     diffCount: diffs.length,
   }));
-  if (!ok) {
-    issues.push(issue("POSTCHECK_CUSTOMER_COMPARISON_DIFF", "R3", "客户对照值存在差异", "客户计算值与系统确定性结果不一致，需要人工复核差异来源。", {
-      targetEmployeeId: diffs[0]?.employeeId,
-      targetField: diffs[0]?.targetField,
-    }));
-  }
 }
 
 function checkHistoricalComparison(
   input: PayrollEngineInput,
   output: PayrollEngineOutput,
   checks: PostCalculationCheck[],
-  issues: PostCalculationIssue[],
 ) {
   const previous = input.postcheckContext?.previousTotals;
   if (!previous) {
@@ -142,21 +133,17 @@ function checkHistoricalComparison(
     changeRate(current.bpjsEmployee, previous.bpjsEmployee),
   );
   const ok = maxChangeRate <= 0.1 && current.employeeCount === previous.employeeCount;
-  checks.push(check("historical_comparison", ok, "人数、实发、PPh21、BPJS 对上期环比核查。", {
+  checks.push(check("historical_comparison", ok, "人数、实发、PPh21、BPJS 对上期环比核查；异常交给 Phase 11 高风险放行。", {
     previousEmployeeCount: previous.employeeCount,
     currentEmployeeCount: current.employeeCount,
     maxChangeRate,
   }));
-  if (!ok) {
-    issues.push(issue("POSTCHECK_HISTORY_COMPARISON_BLOCKED", "R3", "历史环比核查异常", "人数或关键金额环比超过 10%，需要人工复核。"));
-  }
 }
 
 function checkBpjsBill(
   input: PayrollEngineInput,
   output: PayrollEngineOutput,
   checks: PostCalculationCheck[],
-  issues: PostCalculationIssue[],
 ) {
   const bill = input.postcheckContext?.bpjsBillTotals;
   if (!bill) {
@@ -170,10 +157,7 @@ function checkBpjsBill(
     Math.abs((bill.healthEmployer ?? current.bpjsHealthEmployer) - current.bpjsHealthEmployer) +
     Math.abs((bill.employmentEmployer ?? current.bpjsEmploymentEmployer) - current.bpjsEmploymentEmployer);
   const ok = delta <= 1;
-  checks.push(check("bpjs_bill_cross_check", ok, "社保账单合计与系统 BPJS 结果侧面核验。", { delta }));
-  if (!ok) {
-    issues.push(issue("POSTCHECK_BPJS_BILL_DIFF", "R3", "社保账单侧面核验不一致", "社保账单合计与系统 BPJS 结果存在差异。"));
-  }
+  checks.push(check("bpjs_bill_cross_check", ok, "社保账单差异交给 Phase 11 核查/高风险分层。", { delta }));
 }
 
 function checkExportPreview(
