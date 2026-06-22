@@ -27,11 +27,15 @@ function canAdvanceToNext({
   blockingIssueCount,
   highRiskIssueCount,
   pendingCustomerConfirmationCount,
+  payrollResultCount,
+  calculationTraceCount,
 }: {
   nextStatus: string | null;
   blockingIssueCount: number;
   highRiskIssueCount: number;
   pendingCustomerConfirmationCount: number;
+  payrollResultCount: number;
+  calculationTraceCount: number;
 }) {
   if (!nextStatus) {
     return false;
@@ -41,7 +45,9 @@ function canAdvanceToNext({
     return (
       blockingIssueCount === 0 &&
       highRiskIssueCount === 0 &&
-      pendingCustomerConfirmationCount === 0
+      pendingCustomerConfirmationCount === 0 &&
+      payrollResultCount > 0 &&
+      calculationTraceCount > 0
     );
   }
 
@@ -54,7 +60,7 @@ function canAdvanceToNext({
   }
 
   if (nextStatus === "PENDING_PAYROLL_CONFIRMATION") {
-    return highRiskIssueCount === 0;
+    return highRiskIssueCount === 0 && payrollResultCount > 0 && calculationTraceCount > 0;
   }
 
   return true;
@@ -73,12 +79,28 @@ export default async function PayrollRunDetailPage({ params }: PageProps) {
     return <div className="empty-state">Payroll Run 不存在，或当前用户无权访问。</div>;
   }
 
+  const latestResultVersion = run.payrollResults[0]?.resultVersionRef;
+  const traceCount = run.payrollResults.reduce((count, result) => count + result._count.traces, 0);
+  const resultLineCount = run.payrollResults.reduce((count, result) => count + result._count.lines, 0);
   const canAdvance = canAdvanceToNext({
     nextStatus,
     blockingIssueCount: run.blockingIssueCount,
     highRiskIssueCount: run.highRiskIssueCount,
     pendingCustomerConfirmationCount: run.pendingCustomerConfirmationCount,
+    payrollResultCount: run.payrollResults.length,
+    calculationTraceCount: traceCount,
   });
+  const calculationTraceLines = run.payrollResults.length > 0
+    ? [
+        `PayrollResult ${run.payrollResults.length} 名员工`,
+        `CalculationTrace ${traceCount} 条 · ResultLine ${resultLineCount} 条`,
+        latestResultVersion ? `最新结果版本 ${latestResultVersion}` : "最新结果版本待生成",
+      ]
+    : [
+        `状态事件 ${run.statusEvents.length} 条`,
+        `Open reminder ${run.reminders.length} 条`,
+        "尚未生成正式 PayrollResult；算薪前门禁会 fail closed。",
+      ];
 
   return (
     <div className="run-workbench">
@@ -219,11 +241,7 @@ export default async function PayrollRunDetailPage({ params }: PageProps) {
 
           <CalculationTracePanel
             status={STATUS_LABELS[run.status]}
-            lines={[
-              `状态事件 ${run.statusEvents.length} 条`,
-              `Open reminder ${run.reminders.length} 条`,
-              "算薪结果 trace 将在 Phase 10 接入确定性引擎。",
-            ]}
+            lines={calculationTraceLines}
           />
           <AuditTimeline items={timeline} />
         </section>

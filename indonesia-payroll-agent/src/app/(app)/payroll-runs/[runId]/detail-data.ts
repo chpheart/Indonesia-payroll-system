@@ -40,7 +40,6 @@ const NEXT_STATUS: Partial<Record<PayrollRunStatus, PayrollRunStatus>> = {
   PENDING_STANDARDIZATION_CONFIRMATION: "PENDING_CUSTOMER_CONFIRMATION",
   PENDING_CUSTOMER_CONFIRMATION: "PENDING_PRECHECK",
   PENDING_PRECHECK: "PENDING_CALCULATION",
-  PENDING_CALCULATION: "PENDING_PAYROLL_CONFIRMATION",
   PENDING_HIGH_RISK_RELEASE: "PENDING_PAYROLL_CONFIRMATION",
   PENDING_PAYROLL_CONFIRMATION: "LOCKED",
   LOCKED: "EXPORTED",
@@ -70,6 +69,14 @@ export async function loadRunDetail(actor: ActorContext, runId: string) {
         auditLogs: {
           orderBy: { createdAt: "desc" },
           take: 15,
+        },
+        payrollResults: {
+          where: { status: "FINAL" },
+          orderBy: [{ calculatedAt: "desc" }, { employeeId: "asc" }],
+          take: 50,
+          include: {
+            _count: { select: { lines: true, traces: true } },
+          },
         },
       },
     });

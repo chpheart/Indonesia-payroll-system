@@ -37,6 +37,8 @@ export type RunGateCounts = {
   blockingIssueCount: number;
   highRiskIssueCount: number;
   pendingCustomerConfirmationCount: number;
+  payrollResultCount?: number;
+  calculationTraceCount?: number;
 };
 
 const STATUS_ORDER: Record<PayrollRunStatus, number> = {
@@ -69,11 +71,7 @@ const ALLOWED_FORWARD_TRANSITIONS: Record<PayrollRunStatus, PayrollRunStatus[]> 
   PENDING_STANDARDIZATION_CONFIRMATION: ["PENDING_CUSTOMER_CONFIRMATION", "VOIDED"],
   PENDING_CUSTOMER_CONFIRMATION: ["PENDING_PRECHECK", "VOIDED"],
   PENDING_PRECHECK: ["PENDING_CALCULATION", "PENDING_HIGH_RISK_RELEASE", "VOIDED"],
-  PENDING_CALCULATION: [
-    "PENDING_PAYROLL_CONFIRMATION",
-    "PENDING_HIGH_RISK_RELEASE",
-    "VOIDED",
-  ],
+  PENDING_CALCULATION: ["PENDING_HIGH_RISK_RELEASE", "VOIDED"],
   PENDING_HIGH_RISK_RELEASE: ["PENDING_PAYROLL_CONFIRMATION", "VOIDED"],
   PENDING_PAYROLL_CONFIRMATION: ["LOCKED", "VOIDED"],
   LOCKED: ["EXPORTED", "CORRECTED"],
@@ -94,6 +92,10 @@ export function assertValidRunTransition(
 
   if (toStatus === "LOCKED") {
     assertRunCanLock(gates);
+  }
+
+  if (toStatus === "PENDING_PAYROLL_CONFIRMATION" || toStatus === "LOCKED") {
+    assertRunHasCalculationArtifacts(gates);
   }
 
   if (fromStatus === "PENDING_CUSTOMER_CONFIRMATION" && gates.pendingCustomerConfirmationCount > 0) {
@@ -120,6 +122,12 @@ export function assertRunCanLock(gates: RunGateCounts): void {
 
   if (gates.pendingCustomerConfirmationCount > 0) {
     throw new RunStateMachineError("PAYROLL_RUN_CUSTOMER_CONFIRMATION_REQUIRED");
+  }
+}
+
+function assertRunHasCalculationArtifacts(gates: RunGateCounts): void {
+  if ((gates.payrollResultCount ?? 0) <= 0 || (gates.calculationTraceCount ?? 0) <= 0) {
+    throw new RunStateMachineError("PAYROLL_RUN_CALCULATION_RESULT_REQUIRED");
   }
 }
 

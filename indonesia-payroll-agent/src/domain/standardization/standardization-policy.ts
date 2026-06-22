@@ -109,7 +109,7 @@ function validateEmployeeMatch(
 }
 
 export function isCriticalStandardField(field: string) {
-  return /(salary|amount|gross|net|bpjs|tax|npwp|nik|passport|bank|termination|join|fx)/i.test(field);
+  return /(salary|amount|gross|net|bpjs|tax|npwp|ptkp|nik|passport|bank|termination|join|fx|foreign|nationality)/i.test(field);
 }
 
 export function assertReviewableStandardizedInputStatus(status: string) {

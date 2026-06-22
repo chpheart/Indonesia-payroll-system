@@ -9,6 +9,8 @@ const clearGates = {
   blockingIssueCount: 0,
   highRiskIssueCount: 0,
   pendingCustomerConfirmationCount: 0,
+  payrollResultCount: 1,
+  calculationTraceCount: 5,
 };
 
 describe("payroll run state machine", () => {
@@ -67,6 +69,28 @@ describe("payroll run state machine", () => {
         highRiskIssueCount: 1,
       }),
     ).toThrow("PAYROLL_RUN_HIGH_RISK_MUST_BE_RELEASED");
+  });
+
+  it("does not allow manual transition from calculation into payroll confirmation", () => {
+    expect(() =>
+      assertValidRunTransition("PENDING_CALCULATION", "PENDING_PAYROLL_CONFIRMATION", clearGates),
+    ).toThrow("PAYROLL_RUN_STATUS_TRANSITION_NOT_ALLOWED");
+  });
+
+  it("requires persisted payroll results and traces before confirmation or lock", () => {
+    expect(() =>
+      assertValidRunTransition("PENDING_HIGH_RISK_RELEASE", "PENDING_PAYROLL_CONFIRMATION", {
+        ...clearGates,
+        payrollResultCount: 0,
+      }),
+    ).toThrow("PAYROLL_RUN_CALCULATION_RESULT_REQUIRED");
+
+    expect(() =>
+      assertValidRunTransition("PENDING_PAYROLL_CONFIRMATION", "LOCKED", {
+        ...clearGates,
+        calculationTraceCount: 0,
+      }),
+    ).toThrow("PAYROLL_RUN_CALCULATION_RESULT_REQUIRED");
   });
 
   it("allows lock only when all gates are clear", () => {

@@ -264,6 +264,11 @@ enum AuditAction {
   CUSTOMER_CONFIRMATION_PACK_UPDATED
   CUSTOMER_CONFIRMATION_RECORDED
   CUSTOMER_CONFIRMATION_INVALIDATED
+  PRECHECK_RUN_CREATED
+  BLOCKING_ISSUE_CREATED
+  BLOCKING_ISSUE_RESOLVED
+  PAYROLL_RESULT_CREATED
+  CUSTOMER_COMPARISON_VALUE_RECORDED
 
   @@map("audit_action")
 }
@@ -304,6 +309,12 @@ enum AuditObjectType {
   CUSTOMER_CONFIRMATION_PACK
   CUSTOMER_CONFIRMATION_PACK_ITEM
   CUSTOMER_CONFIRMATION
+  PRECHECK_RUN
+  BLOCKING_ISSUE
+  PAYROLL_RESULT
+  PAYROLL_RESULT_LINE
+  CALCULATION_TRACE
+  CUSTOMER_COMPARISON_VALUE
 
   @@map("audit_object_type")
 }
@@ -753,6 +764,59 @@ enum QuestionStatus {
   @@map("question_status")
 }
 
+enum PrecheckRunStatus {
+  PASSED
+  BLOCKED
+
+  @@map("precheck_run_status")
+}
+
+enum BlockingIssueStatus {
+  OPEN
+  RESOLVED
+  WAIVED
+
+  @@map("blocking_issue_status")
+}
+
+enum BlockingIssueSource {
+  PRECHECK
+  CALCULATION
+  MANUAL
+  SYSTEM
+
+  @@map("blocking_issue_source")
+}
+
+enum PayrollResultStatus {
+  FINAL
+  INVALIDATED
+
+  @@map("payroll_result_status")
+}
+
+enum PayrollResultLineType {
+  EARNING
+  DEDUCTION
+  TAX
+  EMPLOYEE_CONTRIBUTION
+  EMPLOYER_CONTRIBUTION
+  TAX_ALLOWANCE
+  THR
+  MEMO
+
+  @@map("payroll_result_line_type")
+}
+
+enum CustomerComparisonValueStatus {
+  MATCH
+  DIFF
+  CUSTOMER_ONLY
+  SYSTEM_ONLY
+
+  @@map("customer_comparison_value_status")
+}
+
 model User {
   id                      String                         @id @default(cuid())
   email                   String                         @unique
@@ -811,6 +875,9 @@ model User {
   resolvedQuestions       QuestionItem[]                 @relation("QuestionResolver")
   closedQuestions         QuestionItem[]                 @relation("QuestionCloser")
   questionEvents          QuestionStatusEvent[]          @relation("QuestionStatusActor")
+  precheckRuns            PrecheckRun[]                  @relation("PrecheckRunActor")
+  resolvedBlockingIssues  BlockingIssue[]                @relation("BlockingIssueResolver")
+  payrollResults          PayrollResult[]                @relation("PayrollResultCalculator")
 
   @@map("users")
 }
@@ -873,6 +940,12 @@ model Client {
   customerConfirmationPackItems CustomerConfirmationPackItem[]
   customerConfirmations         CustomerConfirmation[]
   questionItems                 QuestionItem[]
+  precheckRuns                  PrecheckRun[]
+  blockingIssues                BlockingIssue[]
+  payrollResults                PayrollResult[]
+  payrollResultLines            PayrollResultLine[]
+  calculationTraces             CalculationTrace[]
+  customerComparisonValues      CustomerComparisonValue[]
 
   @@map("clients")
 }
@@ -985,6 +1058,11 @@ model Employee {
   standardizedInputs    StandardizedPayrollInput[]     @relation("StandardizedInputEmployee")
   matchCandidates       EmployeeMatchCandidate[]       @relation("EmployeeMatchCandidateEmployee")
   confirmationPackItems CustomerConfirmationPackItem[] @relation("ConfirmationPackItemEmployee")
+  blockingIssues        BlockingIssue[]                @relation("BlockingIssueEmployee")
+  payrollResults        PayrollResult[]                @relation("PayrollResultEmployee")
+  payrollResultLines    PayrollResultLine[]            @relation("PayrollResultLineEmployee")
+  calculationTraces     CalculationTrace[]             @relation("CalculationTraceEmployee")
+  comparisonValues      CustomerComparisonValue[]      @relation("CustomerComparisonEmployee")
 
   @@unique([clientId, employeeCode])
   @@index([clientId, status])
@@ -1059,6 +1137,12 @@ model PayrollRun {
   customerConfirmationPackItems    CustomerConfirmationPackItem[]
   customerConfirmations            CustomerConfirmation[]
   questionItems                    QuestionItem[]
+  precheckRuns                     PrecheckRun[]
+  blockingIssues                   BlockingIssue[]
+  payrollResults                   PayrollResult[]
+  payrollResultLines               PayrollResultLine[]
+  calculationTraces                CalculationTrace[]
+  customerComparisonValues         CustomerComparisonValue[]
 
   @@unique([clientId, payrollMonth])
   @@index([status, targetCompletionDate])
@@ -1620,49 +1704,50 @@ model FieldMappingVersion {
 }
 
 model StandardizedPayrollInput {
-  id                       String                  @id @default(cuid())
-  clientId                 String                  @map("client_id")
-  runId                    String                  @map("run_id")
-  fieldMappingVersionId    String?                 @map("field_mapping_version_id")
-  employeeId               String?                 @map("employee_id")
-  employeeMatchCandidateId String?                 @map("employee_match_candidate_id")
-  payrollComponentId       String?                 @map("payroll_component_id")
-  rawInputItemId           String?                 @map("raw_input_item_id")
-  fileVersionId            String?                 @map("file_version_id")
-  sheetId                  String?                 @map("sheet_id")
-  sourceCellId             String?                 @map("source_cell_id")
-  versionNumber            Int                     @default(1) @map("version_number")
-  status                   StandardizedInputStatus @default(PREVIEW)
-  standardField            String                  @map("standard_field")
-  componentCode            String?                 @map("component_code")
-  amount                   Decimal?                @db.Decimal(18, 2)
-  currencyCode             String                  @default("IDR") @map("currency_code")
-  value                    Json                    @default("{}")
-  sourceSheetName          String?                 @map("source_sheet_name")
-  sourceRowIndex           Int?                    @map("source_row_index")
-  storeCode                String?                 @map("store_code")
-  storeName                String?                 @map("store_name")
-  evidenceStatus           EvidenceStatus          @default(MISSING) @map("evidence_status")
-  evidenceRefs             String[]                @default([]) @map("evidence_refs")
-  validationIssues         Json                    @default("[]") @map("validation_issues")
-  optimisticLockVersion    Int                     @default(1) @map("optimistic_lock_version")
-  modifiedById             String?                 @map("modified_by_id")
-  confirmedById            String?                 @map("confirmed_by_id")
-  confirmedAt              DateTime?               @map("confirmed_at")
-  createdAt                DateTime                @default(now()) @map("created_at")
-  updatedAt                DateTime                @updatedAt @map("updated_at")
-  client                   Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  payrollRun               PayrollRun              @relation(fields: [runId], references: [id], onDelete: Restrict)
-  fieldMappingVersion      FieldMappingVersion?    @relation(fields: [fieldMappingVersionId], references: [id], onDelete: SetNull)
-  employee                 Employee?               @relation("StandardizedInputEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
-  employeeMatchCandidate   EmployeeMatchCandidate? @relation(fields: [employeeMatchCandidateId], references: [id], onDelete: SetNull)
-  payrollComponent         PayrollComponent?       @relation(fields: [payrollComponentId], references: [id], onDelete: SetNull)
-  rawInputItem             RawInputItem?           @relation(fields: [rawInputItemId], references: [id], onDelete: SetNull)
-  fileVersion              UploadedFileVersion?    @relation(fields: [fileVersionId], references: [id], onDelete: SetNull)
-  sheet                    WorkbookSheet?          @relation(fields: [sheetId], references: [id], onDelete: SetNull)
-  sourceCell               WorkbookCell?           @relation(fields: [sourceCellId], references: [id], onDelete: SetNull)
-  modifiedBy               User?                   @relation("StandardizedInputModifier", fields: [modifiedById], references: [id], onDelete: SetNull)
-  confirmedBy              User?                   @relation("StandardizedInputConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+  id                       String                    @id @default(cuid())
+  clientId                 String                    @map("client_id")
+  runId                    String                    @map("run_id")
+  fieldMappingVersionId    String?                   @map("field_mapping_version_id")
+  employeeId               String?                   @map("employee_id")
+  employeeMatchCandidateId String?                   @map("employee_match_candidate_id")
+  payrollComponentId       String?                   @map("payroll_component_id")
+  rawInputItemId           String?                   @map("raw_input_item_id")
+  fileVersionId            String?                   @map("file_version_id")
+  sheetId                  String?                   @map("sheet_id")
+  sourceCellId             String?                   @map("source_cell_id")
+  versionNumber            Int                       @default(1) @map("version_number")
+  status                   StandardizedInputStatus   @default(PREVIEW)
+  standardField            String                    @map("standard_field")
+  componentCode            String?                   @map("component_code")
+  amount                   Decimal?                  @db.Decimal(18, 2)
+  currencyCode             String                    @default("IDR") @map("currency_code")
+  value                    Json                      @default("{}")
+  sourceSheetName          String?                   @map("source_sheet_name")
+  sourceRowIndex           Int?                      @map("source_row_index")
+  storeCode                String?                   @map("store_code")
+  storeName                String?                   @map("store_name")
+  evidenceStatus           EvidenceStatus            @default(MISSING) @map("evidence_status")
+  evidenceRefs             String[]                  @default([]) @map("evidence_refs")
+  validationIssues         Json                      @default("[]") @map("validation_issues")
+  optimisticLockVersion    Int                       @default(1) @map("optimistic_lock_version")
+  modifiedById             String?                   @map("modified_by_id")
+  confirmedById            String?                   @map("confirmed_by_id")
+  confirmedAt              DateTime?                 @map("confirmed_at")
+  createdAt                DateTime                  @default(now()) @map("created_at")
+  updatedAt                DateTime                  @updatedAt @map("updated_at")
+  client                   Client                    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun               PayrollRun                @relation(fields: [runId], references: [id], onDelete: Restrict)
+  fieldMappingVersion      FieldMappingVersion?      @relation(fields: [fieldMappingVersionId], references: [id], onDelete: SetNull)
+  employee                 Employee?                 @relation("StandardizedInputEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
+  employeeMatchCandidate   EmployeeMatchCandidate?   @relation(fields: [employeeMatchCandidateId], references: [id], onDelete: SetNull)
+  payrollComponent         PayrollComponent?         @relation(fields: [payrollComponentId], references: [id], onDelete: SetNull)
+  rawInputItem             RawInputItem?             @relation(fields: [rawInputItemId], references: [id], onDelete: SetNull)
+  fileVersion              UploadedFileVersion?      @relation(fields: [fileVersionId], references: [id], onDelete: SetNull)
+  sheet                    WorkbookSheet?            @relation(fields: [sheetId], references: [id], onDelete: SetNull)
+  sourceCell               WorkbookCell?             @relation(fields: [sourceCellId], references: [id], onDelete: SetNull)
+  modifiedBy               User?                     @relation("StandardizedInputModifier", fields: [modifiedById], references: [id], onDelete: SetNull)
+  confirmedBy              User?                     @relation("StandardizedInputConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+  comparisonValues         CustomerComparisonValue[]
 
   @@index([clientId, status])
   @@index([runId, status])
@@ -1945,6 +2030,190 @@ model QuestionStatusEvent {
   @@index([questionId, createdAt])
   @@index([toStatus, createdAt])
   @@map("question_status_events")
+}
+
+model PrecheckRun {
+  id          String            @id @default(cuid())
+  clientId    String            @map("client_id")
+  runId       String            @map("run_id")
+  status      PrecheckRunStatus
+  gateResults Json              @default("[]") @map("gate_results")
+  issueCount  Int               @default(0) @map("issue_count")
+  runById     String?           @map("run_by_id")
+  passedAt    DateTime?         @map("passed_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  client      Client            @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun  PayrollRun        @relation(fields: [runId], references: [id], onDelete: Restrict)
+  runBy       User?             @relation("PrecheckRunActor", fields: [runById], references: [id], onDelete: SetNull)
+  issues      BlockingIssue[]
+
+  @@index([clientId, createdAt])
+  @@index([runId, createdAt])
+  @@index([status, createdAt])
+  @@map("precheck_runs")
+}
+
+model BlockingIssue {
+  id               String              @id @default(cuid())
+  clientId         String              @map("client_id")
+  runId            String              @map("run_id")
+  precheckRunId    String?             @map("precheck_run_id")
+  payrollResultId  String?             @map("payroll_result_id")
+  targetEmployeeId String?             @map("target_employee_id")
+  source           BlockingIssueSource @default(PRECHECK)
+  issueType        String              @map("issue_type")
+  status           BlockingIssueStatus @default(OPEN)
+  riskLevel        AuditRiskLevel      @default(R2) @map("risk_level")
+  targetObjectType String?             @map("target_object_type")
+  targetObjectId   String?             @map("target_object_id")
+  targetField      String?             @map("target_field")
+  title            String
+  detail           String              @db.Text
+  evidenceRefs     String[]            @default([]) @map("evidence_refs")
+  resolutionNote   String?             @map("resolution_note") @db.Text
+  resolvedById     String?             @map("resolved_by_id")
+  resolvedAt       DateTime?           @map("resolved_at")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  client           Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun       PayrollRun          @relation(fields: [runId], references: [id], onDelete: Restrict)
+  precheckRun      PrecheckRun?        @relation(fields: [precheckRunId], references: [id], onDelete: SetNull)
+  payrollResult    PayrollResult?      @relation(fields: [payrollResultId], references: [id], onDelete: SetNull)
+  targetEmployee   Employee?           @relation("BlockingIssueEmployee", fields: [targetEmployeeId], references: [id], onDelete: SetNull)
+  resolvedBy       User?               @relation("BlockingIssueResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([clientId, status])
+  @@index([runId, status])
+  @@index([precheckRunId])
+  @@index([targetEmployeeId, targetField])
+  @@index([issueType, riskLevel])
+  @@map("blocking_issues")
+}
+
+model PayrollResult {
+  id                     String              @id @default(cuid())
+  clientId               String              @map("client_id")
+  runId                  String              @map("run_id")
+  employeeId             String              @map("employee_id")
+  resultVersionRef       String              @map("result_version_ref")
+  status                 PayrollResultStatus @default(FINAL)
+  grossPay               Decimal             @default(0) @map("gross_pay") @db.Decimal(18, 2)
+  taxableIncome          Decimal             @default(0) @map("taxable_income") @db.Decimal(18, 2)
+  pph21                  Decimal             @default(0) @db.Decimal(18, 2)
+  bpjsHealthEmployee     Decimal             @default(0) @map("bpjs_health_employee") @db.Decimal(18, 2)
+  bpjsEmploymentEmployee Decimal             @default(0) @map("bpjs_employment_employee") @db.Decimal(18, 2)
+  bpjsHealthEmployer     Decimal             @default(0) @map("bpjs_health_employer") @db.Decimal(18, 2)
+  bpjsEmploymentEmployer Decimal             @default(0) @map("bpjs_employment_employer") @db.Decimal(18, 2)
+  totalDeductions        Decimal             @default(0) @map("total_deductions") @db.Decimal(18, 2)
+  netPay                 Decimal             @default(0) @map("net_pay") @db.Decimal(18, 2)
+  employerCost           Decimal             @default(0) @map("employer_cost") @db.Decimal(18, 2)
+  currencyCode           String              @default("IDR") @map("currency_code")
+  sourceVersionSnapshot  Json                @default("{}") @map("source_version_snapshot")
+  calculatedById         String?             @map("calculated_by_id")
+  calculatedAt           DateTime            @default(now()) @map("calculated_at")
+  invalidatedAt          DateTime?           @map("invalidated_at")
+  createdAt              DateTime            @default(now()) @map("created_at")
+  updatedAt              DateTime            @updatedAt @map("updated_at")
+  client                 Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun             PayrollRun          @relation(fields: [runId], references: [id], onDelete: Restrict)
+  employee               Employee            @relation("PayrollResultEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  calculatedBy           User?               @relation("PayrollResultCalculator", fields: [calculatedById], references: [id], onDelete: SetNull)
+  lines                  PayrollResultLine[]
+  traces                 CalculationTrace[]
+  blockingIssues         BlockingIssue[]
+
+  @@unique([runId, employeeId, resultVersionRef])
+  @@index([clientId, status])
+  @@index([runId, status])
+  @@index([employeeId, calculatedAt])
+  @@map("payroll_results")
+}
+
+model PayrollResultLine {
+  id                  String                @id @default(cuid())
+  resultId            String                @map("result_id")
+  clientId            String                @map("client_id")
+  runId               String                @map("run_id")
+  employeeId          String                @map("employee_id")
+  lineType            PayrollResultLineType @map("line_type")
+  componentCode       String                @map("component_code")
+  label               String
+  amount              Decimal               @db.Decimal(18, 2)
+  currencyCode        String                @default("IDR") @map("currency_code")
+  taxableCash         Boolean               @default(false) @map("taxable_cash")
+  bpjsHealthBase      Boolean               @default(false) @map("bpjs_health_base")
+  bpjsEmploymentBase  Boolean               @default(false) @map("bpjs_employment_base")
+  paidOut             Boolean               @default(true) @map("paid_out")
+  affectsNetPay       Boolean               @default(true) @map("affects_net_pay")
+  affectsEmployerCost Boolean               @default(false) @map("affects_employer_cost")
+  sourceInputIds      String[]              @default([]) @map("source_input_ids")
+  ruleVersionRefs     String[]              @default([]) @map("rule_version_refs")
+  traceRef            String?               @map("trace_ref")
+  createdAt           DateTime              @default(now()) @map("created_at")
+  result              PayrollResult         @relation(fields: [resultId], references: [id], onDelete: Restrict)
+  client              Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun          PayrollRun            @relation(fields: [runId], references: [id], onDelete: Restrict)
+  employee            Employee              @relation("PayrollResultLineEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@index([resultId, lineType])
+  @@index([runId, employeeId])
+  @@index([componentCode])
+  @@map("payroll_result_lines")
+}
+
+model CalculationTrace {
+  id                 String        @id @default(cuid())
+  resultId           String        @map("result_id")
+  clientId           String        @map("client_id")
+  runId              String        @map("run_id")
+  employeeId         String        @map("employee_id")
+  resultField        String        @map("result_field")
+  traceType          String        @map("trace_type")
+  inputRefs          Json          @default("[]") @map("input_refs")
+  ruleVersionRefs    String[]      @default([]) @map("rule_version_refs")
+  formula            String        @db.Text
+  parameters         Json          @default("{}")
+  intermediateValues Json          @default("{}") @map("intermediate_values")
+  rounding           Json          @default("{}")
+  outputValue        Decimal       @map("output_value") @db.Decimal(18, 2)
+  createdAt          DateTime      @default(now()) @map("created_at")
+  result             PayrollResult @relation(fields: [resultId], references: [id], onDelete: Restrict)
+  client             Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun         PayrollRun    @relation(fields: [runId], references: [id], onDelete: Restrict)
+  employee           Employee      @relation("CalculationTraceEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+
+  @@index([resultId, resultField])
+  @@index([runId, employeeId])
+  @@index([traceType])
+  @@map("calculation_traces")
+}
+
+model CustomerComparisonValue {
+  id               String                        @id @default(cuid())
+  clientId         String                        @map("client_id")
+  runId            String                        @map("run_id")
+  employeeId       String?                       @map("employee_id")
+  sourceInputId    String?                       @map("source_input_id")
+  targetField      String                        @map("target_field")
+  customerValue    Decimal                       @map("customer_value") @db.Decimal(18, 2)
+  systemValue      Decimal?                      @map("system_value") @db.Decimal(18, 2)
+  delta            Decimal?                      @db.Decimal(18, 2)
+  status           CustomerComparisonValueStatus
+  currencyCode     String                        @default("IDR") @map("currency_code")
+  sourceLabel      String                        @map("source_label")
+  sourceCellId     String?                       @map("source_cell_id")
+  resultVersionRef String?                       @map("result_version_ref")
+  createdAt        DateTime                      @default(now()) @map("created_at")
+  client           Client                        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  payrollRun       PayrollRun                    @relation(fields: [runId], references: [id], onDelete: Restrict)
+  employee         Employee?                     @relation("CustomerComparisonEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
+  sourceInput      StandardizedPayrollInput?     @relation(fields: [sourceInputId], references: [id], onDelete: SetNull)
+
+  @@index([clientId, status])
+  @@index([runId, status])
+  @@index([employeeId, targetField])
+  @@index([sourceInputId])
+  @@map("customer_comparison_values")
 }
 
 model RegressionRun {

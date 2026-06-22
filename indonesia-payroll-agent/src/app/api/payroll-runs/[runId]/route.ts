@@ -101,7 +101,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         actionRequiredForRunTransition(run.status, body.toStatus),
         run.clientId,
       );
-      assertValidRunTransition(run.status, body.toStatus, run);
+      assertValidRunTransition(
+        run.status,
+        body.toStatus,
+        await runGateCountsForTransition(run, body.toStatus),
+      );
       const precheckUpdate =
         body.toStatus === "PENDING_CALCULATION"
           ? await buildRunPrecheckUpdate({
@@ -199,4 +203,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ run: updated });
   });
+}
+
+async function runGateCountsForTransition<T extends { id: string }>(
+  run: T,
+  toStatus: string,
+) {
+  if (toStatus !== "PENDING_PAYROLL_CONFIRMATION" && toStatus !== "LOCKED") {
+    return run;
+  }
+  const [payrollResultCount, calculationTraceCount] = await Promise.all([
+    prisma.payrollResult.count({ where: { runId: run.id, status: "FINAL" } }),
+    prisma.calculationTrace.count({
+      where: { runId: run.id, result: { status: "FINAL" } },
+    }),
+  ]);
+  return { ...run, payrollResultCount, calculationTraceCount };
 }
